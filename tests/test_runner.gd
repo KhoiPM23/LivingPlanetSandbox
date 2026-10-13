@@ -31,6 +31,7 @@ func run_all_tests() -> void:
 	_run_suite("TestExperimentToolsAndPersistence", preload("res://tests/test_experiment_tools_and_persistence.gd").new())
 	_run_suite("TestStabilityAndRegression", preload("res://tests/test_stability_and_regression.gd").new())
 	_run_suite("TestVisualPolishAndUX", preload("res://tests/test_visual_polish_and_ux.gd").new())
+	_run_suite("TestCameraExploration", preload("res://tests/test_camera_exploration.gd").new())
 
 
 func _run_suite(suite_name: String, suite: Object) -> void:

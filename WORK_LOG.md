@@ -250,5 +250,44 @@
   - Verified 100% test pass rate (45/45 tests passing across 11 suites) and collected empirical Iris Xe benchmark metrics.
   - Zero git commits or pushes made.
 
+## 2026-10-14 — OVERNIGHT EXECUTION ORCHESTRATION
 
-
+### BLOCK 1 — Camera và Khám phá Thế giới (COMPLETED)
+- **Multi-Mode Camera Exploration Architecture (`res://presentation/camera/free_look_camera.gd`):**
+  - Expanded `FreeLookCamera` into a unified exploration system supporting 4 robust exploration modes:
+    1. `FREE_LOOK`: 6-DOF free flight navigation with smooth damping, scroll-wheel speed control ($8 \to 38\text{ m/s}$), and terrain/ocean clearance protection ($y \ge \text{terrain} + 0.9\text{m}$, $y \ge 0.85\text{m}$).
+    2. `ORBIT_INSPECT`: Spherical orbit around static targets or points of interest with spherical coordinates (azimuth, elevation, distance), mouse look rotation, and scroll zoom clamping ($2.0 \to 38.0\text{m}$).
+    3. `FOLLOW_ENTITY`: Smooth dynamic third-person tracking camera locked onto living creatures (`_follow_node` or `_follow_callable`). Tracks moving animals as they graze, forage, or hunt across the landscape; gracefully falls back to `ORBIT_INSPECT` if entity despawns.
+    4. `TOP_DOWN`: High-altitude tactical overview ($48\text{m}$ altitude, pitch $-85^\circ$) with planar WASD panning and scroll zoom ($18 \to 65\text{m}$) for god-game ecological observation.
+  - Smooth Ease-In-Out transitions between modes and camera viewpoints ($0.6 \to 0.8\text{s}$ duration).
+  - Out-of-tree safe mathematical fallback for `look_at_target` and entity node queries, ensuring 100% testability.
+- **Scenic POI Bookmarks:**
+  - Configured 5 predefined scenic viewpoints:
+    1. `Island Panorama`: Northwest high scenic vantage.
+    2. `Summit Monolith`: Orbit vantage around the ancient stone monolith altar.
+    3. `Emerald Meadows`: Low-angle pasture view of living herbivore herds.
+    4. `Coastal Shoreline`: Low vantage looking at the waterline and sandy beach.
+    5. `Tactical Overview`: Straight down overhead tactical map.
+  - Cycling via `[B]` key or HUD button.
+- **Compass & Orientation Telemetry:**
+  - Calculated exact horizontal yaw heading degrees ($0^\circ \to 360^\circ$ where $0^\circ = \text{North}$, $90^\circ = \text{East}$, $180^\circ = \text{South}$, $270^\circ = \text{West}$).
+  - 8-wind cardinal string lookup (`N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`).
+- **HUD & UX Integration (`res://presentation/ui/hud.gd`):**
+  - Top bar: Live compass readout (`🧭 NW 315°`), Camera Mode button (`🎥 Free [V]`), and Viewpoints button (`📍 POI [B]`).
+  - Inspector card: Added `[🎯 Track Entity #ID [F]]` action button allowing one-click camera lock onto inspected herbivores/predators.
+  - Hotkeys: `[V]` cycles camera modes; `[B]` cycles scenic viewpoints; `[F]` toggles tracking on inspected entities.
+  - Toast feedback for mode changes, viewpoints reached, and tracked entity loss.
+- **Ecosystem Presentation Hooks (`res://presentation/ecosystem/ecosystem_presentation.gd`):**
+  - Added `get_entity_node(id)` and `get_entity_position(id)` enabling decoupled presentation queries.
+- **Testing & Verification:**
+  - Created `tests/test_camera_exploration.gd` with 7 contract tests:
+    1. `test_camera_modes_enum_and_defaults`: Enum validation and mode names.
+    2. `test_free_look_movement_and_clearance`: Minimum clearance and horizontal boundary clamping.
+    3. `test_orbit_inspect_math_and_zoom`: Spherical orbit calculation and scroll zoom.
+    4. `test_follow_entity_tracking`: Dynamic tracking of moving nodes and graceful fallback on entity loss.
+    5. `test_top_down_mode_navigation`: Downward pitch lock, altitude bounds, planar panning.
+    6. `test_scenic_bookmarks_and_transitions`: All 5 viewpoints and mode transitions.
+    7. `test_compass_heading_and_cardinals`: Exact mathematical cardinal directions.
+  - Registered suite in `tests/test_runner.gd`: **53 Passed across 12 suites, 0 Failed**.
+  - Verified benchmark suite: **44.5 Avg FPS**, 7.00 ms avg frame time on Target Workload.
+  - Verified release smoke test: **7/7 Passed**.

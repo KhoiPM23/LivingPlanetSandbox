@@ -63,6 +63,15 @@ var _flight_label: Label
 var _fog_btn: Button
 var _screen_mode_btn: Button
 
+# Camera & Exploration
+var _compass_label: Label
+var _cam_mode_btn: Button
+var _bookmark_btn: Button
+var _track_entity_btn: Button
+var _last_inspected_id: int = -1
+var _last_inspected_pos: Vector3 = Vector3.ZERO
+
+
 func _ready() -> void:
 	layer = 90
 	if has_node(bootstrap_path):
@@ -102,6 +111,16 @@ func _connect_signals() -> void:
 		bus.subscribe("plant_died", Callable(self, "_on_sim_event").bind("DECAY"))
 		bus.subscribe("player_intervention", Callable(self, "_on_sim_event").bind("TOOL"))
 		bus.subscribe("weather_changed", Callable(self, "_on_sim_event").bind("WEATHER"))
+
+	if _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		if not cam.mode_changed.is_connected(_on_camera_mode_changed):
+			cam.mode_changed.connect(_on_camera_mode_changed)
+		if not cam.bookmark_reached.is_connected(_on_camera_bookmark_reached):
+			cam.bookmark_reached.connect(_on_camera_bookmark_reached)
+		if not cam.followed_entity_lost.is_connected(_on_camera_entity_lost):
+			cam.followed_entity_lost.connect(_on_camera_entity_lost)
+
 
 func _build_ui() -> void:
 	_container = Control.new()
@@ -150,7 +169,29 @@ func _build_top_bar() -> void:
 	_seed_lbl.add_theme_font_size_override("font_size", 11)
 	hbox.add_child(_seed_lbl)
 
+	# Compass Telemetry
+	_compass_label = Label.new()
+	_compass_label.text = "🧭 N 000°"
+	_compass_label.add_theme_color_override("font_color", Color(0.35, 0.9, 0.75))
+	_compass_label.add_theme_font_size_override("font_size", 11)
+	hbox.add_child(_compass_label)
+
+	# Camera Mode Switcher
+	_cam_mode_btn = Button.new()
+	_cam_mode_btn.text = "🎥 Free [V]"
+	_cam_mode_btn.custom_minimum_size = Vector2(85, 24)
+	_cam_mode_btn.pressed.connect(_on_camera_mode_btn_pressed)
+	hbox.add_child(_cam_mode_btn)
+
+	# Scenic Viewpoints
+	_bookmark_btn = Button.new()
+	_bookmark_btn.text = "📍 POI [B]"
+	_bookmark_btn.custom_minimum_size = Vector2(75, 24)
+	_bookmark_btn.pressed.connect(_on_bookmark_btn_pressed)
+	hbox.add_child(_bookmark_btn)
+
 	hbox.add_child(_create_spacer())
+
 
 	# Simulation Clock
 	_time_label = Label.new()
@@ -337,7 +378,14 @@ func _build_right_observability_panel() -> void:
 	_inspect_details.add_theme_font_size_override("font_size", 11)
 	tab_inspect.add_child(_inspect_details)
 
+	_track_entity_btn = Button.new()
+	_track_entity_btn.text = "🎯 Track Entity in Camera [F]"
+	_track_entity_btn.visible = false
+	_track_entity_btn.pressed.connect(_on_track_entity_pressed)
+	tab_inspect.add_child(_track_entity_btn)
+
 	_tab_container.add_child(tab_inspect)
+
 
 	# --- TAB 3: EVENT LOG ---
 	var tab_events: VBoxContainer = VBoxContainer.new()
@@ -408,12 +456,13 @@ func _build_bottom_hint_bar() -> void:
 	_bottom_bar.add_theme_stylebox_override("panel", style)
 
 	var hint: Label = Label.new()
-	hint.text = "[W/A/S/D] Fly | [1-7] Tool | [LMB] Apply | [Space] Pause | [Esc] Menu | [F1] Help | [F5] Save | [F9] Load | [H] Hide"
+	hint.text = "[W/A/S/D] Fly/Pan | [V] Cam Mode | [B] Viewpoints | [F] Track | [1-7] Tool | [LMB] Apply | [Space] Pause | [Esc] Menu"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.85))
 	hint.add_theme_font_size_override("font_size", 11)
 	_bottom_bar.add_child(hint)
+
 
 	_container.add_child(_bottom_bar)
 
@@ -668,7 +717,7 @@ func _on_reroll_world_pressed() -> void:
 	var new_seed: int = randi() % 89999999 + 10000000
 	_bootstrap.world_seed.set_seed(new_seed)
 	_bootstrap.reset_world()
-	
+
 	var main_node: Node = get_tree().root.find_child("Main", true, false)
 	if main_node and main_node.has_node("IslandTerrain"):
 		var terrain: IslandTerrain = main_node.get_node("IslandTerrain") as IslandTerrain
@@ -742,6 +791,15 @@ func _process(delta: float) -> void:
 
 		if _chart and m.history.size() > 0:
 			_chart.update_history(m.history)
+
+	# Update Camera Telemetry
+	if _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		if _compass_label:
+			_compass_label.text = "🧭 %s %03.0f°" % [cam.get_compass_cardinal(), cam.get_compass_heading_degrees()]
+		if _cam_mode_btn:
+			_cam_mode_btn.text = "🎥 %s [V]" % cam.get_mode_name(cam.current_mode)
+
 
 # =========================================================================
 # EVENT HANDLERS & CALLBACKS
@@ -829,6 +887,9 @@ func _on_inspection_performed(data: Dictionary) -> void:
 		var id: int = ent.get("id", 0)
 		var hp: float = ent.get("health", 100.0)
 		var age: float = ent.get("age", 0.0)
+		_last_inspected_id = id
+		_last_inspected_pos = data.get("position", Vector3.ZERO)
+
 
 		txt += "=== ENTITY #%d (%s) ===\n" % [id, type]
 		txt += "Species:    %s\n" % species
@@ -867,9 +928,16 @@ func _on_inspection_performed(data: Dictionary) -> void:
 		txt += "Sun Exposure:%.0f%%\n" % (env.get("sun_exposure", 1.0) * 100.0)
 
 	_inspect_details.text = txt
+	if _last_inspected_id > 0 and _track_entity_btn:
+		_track_entity_btn.visible = true
+		_track_entity_btn.text = "🎯 Track Entity #%d [F]" % _last_inspected_id
+	elif _track_entity_btn:
+		_track_entity_btn.visible = false
+
 	# Switch to inspector tab
 	if _tab_container:
 		_tab_container.current_tab = 1
+
 
 func _on_sim_event(payload: Variant, category: String) -> void:
 	var desc: String = ""
@@ -955,3 +1023,51 @@ func _unhandled_input(event: InputEvent) -> void:
 					var next_st: int = (int(_bootstrap.weather_system.current_state) + 1) % 4
 					_bootstrap.weather_system.set_state(next_st as WeatherSystem.WeatherState, 60.0)
 					show_toast("Weather changed to " + WeatherSystem.get_state_name(next_st as WeatherSystem.WeatherState), true)
+			KEY_F:
+				_on_track_entity_pressed()
+
+func _on_camera_mode_btn_pressed() -> void:
+	if _camera is FreeLookCamera:
+		(_camera as FreeLookCamera).cycle_camera_mode()
+
+func _on_bookmark_btn_pressed() -> void:
+	if _camera is FreeLookCamera:
+		(_camera as FreeLookCamera).cycle_bookmark()
+
+func _on_track_entity_pressed() -> void:
+	if not (_camera is FreeLookCamera):
+		return
+	var cam: FreeLookCamera = _camera as FreeLookCamera
+
+	if cam.current_mode == FreeLookCamera.CameraMode.FOLLOW_ENTITY:
+		cam.set_camera_mode(FreeLookCamera.CameraMode.FREE_LOOK)
+		show_toast("Returned to Free Flight mode", true)
+		return
+
+	if _last_inspected_id > 0:
+		var root_node: Node = get_tree().root if get_tree() else null
+		var eco: EcosystemPresentation = root_node.find_child("EcosystemPresentation", true, false) as EcosystemPresentation if root_node else null
+		if eco:
+			var node: Node3D = eco.get_entity_node(_last_inspected_id)
+			if is_instance_valid(node):
+				cam.start_following_node(node, 6.0, _last_inspected_id)
+				show_toast("Tracking Entity #%d" % _last_inspected_id, true)
+				return
+		cam.start_orbit(_last_inspected_pos, 7.0)
+		show_toast("Orbiting target location", true)
+	elif _last_inspected_pos != Vector3.ZERO:
+		cam.start_orbit(_last_inspected_pos, 7.0)
+		show_toast("Orbiting inspected point", true)
+	else:
+		show_toast("No entity or point selected to track", false)
+
+func _on_camera_mode_changed(mode: FreeLookCamera.CameraMode, mode_name: String) -> void:
+	if _cam_mode_btn:
+		_cam_mode_btn.text = "🎥 %s [V]" % mode_name
+	show_toast("Camera: %s" % mode_name, true)
+
+func _on_camera_bookmark_reached(_id: int, b_name: String) -> void:
+	show_toast("Viewpoint: %s" % b_name, true)
+
+func _on_camera_entity_lost(id: int) -> void:
+	show_toast("Tracked Entity #%d was lost" % id, false)

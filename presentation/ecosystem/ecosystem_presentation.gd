@@ -132,7 +132,7 @@ func setup(coordinator: EcosystemCoordinator) -> void:
 func _process(delta: float) -> void:
 	if not _coordinator or not is_visible_in_tree():
 		return
-		
+
 	_anim_time += delta
 	_update_herbivores(delta)
 	_update_predators(delta)
@@ -143,7 +143,7 @@ func _update_selection_marker(delta: float) -> void:
 	if not _selection_marker or not _selection_marker.visible:
 		return
 	_selection_marker.rotation.y += delta * 2.0
-	
+
 	var target_node: Node3D = null
 	if _herbivore_nodes.has(inspected_entity_id):
 		target_node = _herbivore_nodes[inspected_entity_id]
@@ -151,7 +151,7 @@ func _update_selection_marker(delta: float) -> void:
 		target_node = _predator_nodes[inspected_entity_id]
 	elif _plant_nodes.has(inspected_entity_id):
 		target_node = _plant_nodes[inspected_entity_id]
-		
+
 	if target_node and is_instance_valid(target_node):
 		_selection_marker.position = target_node.position + Vector3(0.0, 0.05, 0.0)
 		var base_scale: float = target_node.scale.x * 1.15
@@ -162,7 +162,7 @@ func _update_selection_marker(delta: float) -> void:
 func _update_herbivores(delta: float) -> void:
 	var active_herbivores: Array = _coordinator.fauna_sim.get_all_herbivores()
 	var active_ids: Dictionary = {}
-	
+
 	for h in active_herbivores:
 		active_ids[h.id] = true
 		var node: Node3D = _herbivore_nodes.get(h.id, null)
@@ -171,7 +171,7 @@ func _update_herbivores(delta: float) -> void:
 			add_child(node)
 			_herbivore_nodes[h.id] = node
 			node.position = h.position
-			
+
 		var target_pos: Vector3 = h.position
 		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
 		var is_moving: bool = h.velocity.length_squared() > 0.1
@@ -213,17 +213,17 @@ func _update_herbivores(delta: float) -> void:
 				if head_node:
 					head_node.position.y = lerpf(head_node.position.y, 0.85, clampf(delta * 8.0, 0.0, 1.0))
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, clampf(delta * 8.0, 0.0, 1.0))
-		
+
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
-		
+
 		if is_moving:
 			var target_rot_y: float = -h.heading + PI * 0.5
 			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 10.0, 0.0, 1.0))
-			
+
 		var target_scale: float = 0.6 if h.life_stage == FaunaSimulation.LifeStage.JUVENILE else 1.0
 		if not is_equal_approx(node.scale.x, target_scale):
 			node.scale = Vector3(target_scale, target_scale, target_scale)
-		
+
 	for id: int in _herbivore_nodes.keys():
 		if not active_ids.has(id):
 			_herbivore_nodes[id].queue_free()
@@ -232,7 +232,7 @@ func _update_herbivores(delta: float) -> void:
 func _update_predators(delta: float) -> void:
 	var active_predators: Array = _coordinator.fauna_sim.get_all_predators()
 	var active_ids: Dictionary = {}
-	
+
 	for p in active_predators:
 		active_ids[p.id] = true
 		var node: Node3D = _predator_nodes.get(p.id, null)
@@ -241,7 +241,7 @@ func _update_predators(delta: float) -> void:
 			add_child(node)
 			_predator_nodes[p.id] = node
 			node.position = p.position
-			
+
 		var target_pos: Vector3 = p.position
 		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
 		var is_moving: bool = p.velocity.length_squared() > 0.1
@@ -268,13 +268,13 @@ func _update_predators(delta: float) -> void:
 				target_pos.y += prowl_bob
 				if head_node:
 					head_node.position.y = lerpf(head_node.position.y, 0.60, clampf(delta * 8.0, 0.0, 1.0))
-		
+
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
-		
+
 		if is_moving:
 			var target_rot_y: float = -p.heading + PI * 0.5
 			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 10.0, 0.0, 1.0))
-			
+
 	for id: int in _predator_nodes.keys():
 		if not active_ids.has(id):
 			_predator_nodes[id].queue_free()
@@ -283,7 +283,7 @@ func _update_predators(delta: float) -> void:
 func _update_plants() -> void:
 	var active_plants: Array = _coordinator.flora_sim.get_all_plants()
 	var active_ids: Dictionary = {}
-	
+
 	for pl in active_plants:
 		active_ids[pl.id] = true
 		var node: Node3D = _plant_nodes.get(pl.id, null)
@@ -292,11 +292,11 @@ func _update_plants() -> void:
 			add_child(node)
 			_plant_nodes[pl.id] = node
 			node.position = pl.position
-			
+
 		var target_scale: float = 0.4 + (pl.biomass / pl.max_biomass) * 0.8
 		if absf(node.scale.x - target_scale) > 0.02:
 			node.scale = Vector3(target_scale, target_scale, target_scale)
-		
+
 	for id: int in _plant_nodes.keys():
 		if not active_ids.has(id):
 			_plant_nodes[id].queue_free()
@@ -306,21 +306,21 @@ func _update_plants() -> void:
 func _create_herbivore_mesh() -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "HerbivoreView"
-	
+
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_herb_body
 	body_inst.material_override = _mat_herb_body
 	body_inst.position = Vector3(0.0, 0.5, 0.0)
 	root.add_child(body_inst)
-	
+
 	var head_inst: MeshInstance3D = MeshInstance3D.new()
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_herb_head
 	head_inst.material_override = _mat_herb_head
 	head_inst.position = Vector3(0.0, 0.85, 0.5)
 	root.add_child(head_inst)
-	
+
 	var horn_left: MeshInstance3D = MeshInstance3D.new()
 	horn_left.name = "HornLeft"
 	horn_left.mesh = _mesh_herb_horn
@@ -328,7 +328,7 @@ func _create_herbivore_mesh() -> Node3D:
 	horn_left.position = Vector3(-0.15, 1.15, 0.45)
 	horn_left.rotation_degrees = Vector3(15, 0, -15)
 	root.add_child(horn_left)
-	
+
 	var horn_right: MeshInstance3D = MeshInstance3D.new()
 	horn_right.name = "HornRight"
 	horn_right.mesh = _mesh_herb_horn
@@ -336,21 +336,21 @@ func _create_herbivore_mesh() -> Node3D:
 	horn_right.position = Vector3(0.15, 1.15, 0.45)
 	horn_right.rotation_degrees = Vector3(15, 0, 15)
 	root.add_child(horn_right)
-	
+
 	return root
 
 ## Low-poly stylized predator model using shared meshes and materials
 func _create_predator_mesh() -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "PredatorView"
-	
+
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_pred_body
 	body_inst.material_override = _mat_pred_body
 	body_inst.position = Vector3(0.0, 0.45, 0.0)
 	root.add_child(body_inst)
-	
+
 	var head_inst: MeshInstance3D = MeshInstance3D.new()
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_pred_head
@@ -358,26 +358,26 @@ func _create_predator_mesh() -> Node3D:
 	head_inst.position = Vector3(0.0, 0.6, 0.7)
 	head_inst.rotation_degrees = Vector3(-90, 0, 0)
 	root.add_child(head_inst)
-	
+
 	var eye_l: MeshInstance3D = MeshInstance3D.new()
 	eye_l.mesh = _mesh_pred_eye
 	eye_l.material_override = _mat_pred_eye
 	eye_l.position = Vector3(-0.12, 0.62, 0.82)
 	root.add_child(eye_l)
-	
+
 	var eye_r: MeshInstance3D = MeshInstance3D.new()
 	eye_r.mesh = _mesh_pred_eye
 	eye_r.material_override = _mat_pred_eye
 	eye_r.position = Vector3(0.12, 0.62, 0.82)
 	root.add_child(eye_r)
-	
+
 	return root
 
 ## Stylized plant mesh using shared meshes, materials, and selective shadow casting
 func _create_plant_mesh(species: String) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "PlantView_" + species
-	
+
 	var inst: MeshInstance3D = MeshInstance3D.new()
 	if species == "shrub_bush":
 		inst.mesh = _mesh_shrub
@@ -390,7 +390,7 @@ func _create_plant_mesh(species: String) -> Node3D:
 		inst.position = Vector3(0.0, _mesh_grass.height * 0.5, 0.0)
 		# Small ground grass patches don't need expensive shadow map passes
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		
+
 	root.add_child(inst)
 	return root
 
@@ -398,11 +398,28 @@ func clear() -> void:
 	for node: Node3D in _herbivore_nodes.values():
 		node.queue_free()
 	_herbivore_nodes.clear()
-	
+
 	for node: Node3D in _predator_nodes.values():
 		node.queue_free()
 	_predator_nodes.clear()
-	
+
 	for node: Node3D in _plant_nodes.values():
 		node.queue_free()
 	_plant_nodes.clear()
+
+## Returns the 3D visual scene node representing an entity, or null if uninstantiated
+func get_entity_node(id: int) -> Node3D:
+	if _herbivore_nodes.has(id):
+		return _herbivore_nodes[id]
+	if _predator_nodes.has(id):
+		return _predator_nodes[id]
+	if _plant_nodes.has(id):
+		return _plant_nodes[id]
+	return null
+
+## Returns the current global position of an entity presentation node, or Vector3.ZERO
+func get_entity_position(id: int) -> Vector3:
+	var n: Node3D = get_entity_node(id)
+	if is_instance_valid(n):
+		return n.global_position
+	return Vector3.ZERO
