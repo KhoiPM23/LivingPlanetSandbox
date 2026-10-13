@@ -12,9 +12,10 @@ func test_camera_modes_enum_and_defaults() -> bool:
 	var name_orbit: bool = cam.get_mode_name(FreeLookCamera.CameraMode.ORBIT_INSPECT) == "Orbit View"
 	var name_follow: bool = cam.get_mode_name(FreeLookCamera.CameraMode.FOLLOW_ENTITY) == "Tracking Entity"
 	var name_top: bool = cam.get_mode_name(FreeLookCamera.CameraMode.TOP_DOWN) == "Tactical Map"
+	var name_walker: bool = cam.get_mode_name(FreeLookCamera.CameraMode.FIRST_PERSON_WALKER) == "First-Person Walker"
 
 	cam.free()
-	return mode_default and name_free and name_orbit and name_follow and name_top
+	return mode_default and name_free and name_orbit and name_follow and name_top and name_walker
 
 func test_free_look_movement_and_clearance() -> bool:
 	var cam: FreeLookCamera = FreeLookCamera.new()
@@ -138,3 +139,123 @@ func test_compass_heading_and_cardinals() -> bool:
 
 	cam.free()
 	return is_north and is_east and is_south and is_west
+
+func test_first_person_walker_mode_and_transitions() -> bool:
+	var cam: FreeLookCamera = FreeLookCamera.new()
+	cam._ready()
+
+	var initial_mode_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FREE_LOOK
+
+	# Cycle 1: Free Flight -> First-Person Walker
+	cam.cycle_camera_mode()
+	var walker_mode_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER
+	var walker_name_ok: bool = cam.get_mode_name(cam.current_mode) == "First-Person Walker"
+
+	# Cycle 2: First-Person Walker -> Free Flight
+	cam.cycle_camera_mode()
+	var returned_free_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FREE_LOOK
+	var returned_name_ok: bool = cam.get_mode_name(cam.current_mode) == "Free Flight"
+
+	# Stress test rapid mode toggles 5 times
+	var rapid_cycles_ok: bool = true
+	for i in range(5):
+		cam.cycle_camera_mode()
+		if cam.current_mode != FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+			rapid_cycles_ok = false
+		cam.cycle_camera_mode()
+		if cam.current_mode != FreeLookCamera.CameraMode.FREE_LOOK:
+			rapid_cycles_ok = false
+
+	cam.free()
+	return initial_mode_ok and walker_mode_ok and walker_name_ok and returned_free_ok and returned_name_ok and rapid_cycles_ok
+
+func test_walker_physics_and_eye_height() -> bool:
+	var walker: FirstPersonWalker = FirstPersonWalker.new()
+	walker._ready()
+
+	var capsule_ok: bool = walker._capsule != null and absf(walker._capsule.radius - 0.35) < 0.01 and absf(walker._capsule.height - 1.75) < 0.01
+	var eye_height_target_ok: bool = walker.eye_height >= 1.6 and walker.eye_height <= 1.7
+
+	# Test eye height calculation
+	walker.teleport_to(Vector3(12.0, 4.0, -8.0))
+	var eye_pos: Vector3 = walker.get_eye_position()
+	var eye_y_ok: bool = absf(eye_pos.y - (4.0 + walker.eye_height)) < 0.01
+
+	# Test jump impulse
+	walker.move_walker(0.05, Vector3.ZERO, false, true)
+	var jump_impulse_ok: bool = absf(walker.velocity.y - walker.jump_velocity) < 0.01
+
+	# Test air gravity
+	walker.move_walker(0.05, Vector3.ZERO, false, false)
+	var gravity_ok: bool = walker.velocity.y < walker.jump_velocity
+
+	# Test walk vs sprint speeds
+	walker.teleport_to(Vector3(0.0, 2.0, 0.0))
+	walker.move_walker(0.2, Vector3(1.0, 0.0, 0.0), false, false)
+	var walk_speed_x: float = walker.velocity.x
+
+	walker.teleport_to(Vector3(0.0, 2.0, 0.0))
+	walker.move_walker(0.2, Vector3(1.0, 0.0, 0.0), true, false)
+	var sprint_speed_x: float = walker.velocity.x
+	var sprint_faster: bool = sprint_speed_x > walk_speed_x
+
+	# Test boundary limits clamp to island radius 74m
+	walker.teleport_to(Vector3(100.0, 2.0, 0.0))
+	walker.move_walker(0.05, Vector3.ZERO, false, false)
+	var boundary_ok: bool = Vector2(walker.position.x, walker.position.z).length() <= 74.05
+
+	walker.free()
+	return capsule_ok and eye_height_target_ok and eye_y_ok and jump_impulse_ok and gravity_ok and sprint_faster and boundary_ok
+
+func test_walker_menu_input_blocking() -> bool:
+	var cam: FreeLookCamera = FreeLookCamera.new()
+	cam._ready()
+	cam.set_camera_mode(FreeLookCamera.CameraMode.FIRST_PERSON_WALKER)
+
+	var initial_unblocked: bool = not cam.is_input_blocked()
+	cam.set_input_blocked(true)
+	var cam_blocked: bool = cam.is_input_blocked() and not cam._mouse_captured
+
+	var tools: PlayerToolController = PlayerToolController.new()
+	tools._ready()
+	var tools_initial: bool = not tools.is_input_blocked()
+	tools.set_input_blocked(true)
+	var tools_blocked: bool = tools.is_input_blocked()
+
+	cam.set_input_blocked(false)
+	tools.set_input_blocked(false)
+	var restored_ok: bool = not cam.is_input_blocked() and not tools.is_input_blocked()
+
+	cam.free()
+	tools.free()
+	return initial_unblocked and cam_blocked and tools_initial and tools_blocked and restored_ok
+
+func test_multi_seed_world_generation() -> bool:
+	var seeds: Array[int] = [1337, 42069, 99999]
+	var all_seeds_valid: bool = true
+
+	for s: int in seeds:
+		var terrain: IslandTerrain = IslandTerrain.new()
+		terrain.generate_island(s)
+
+		var center_h: float = terrain.get_height_at(0.0, 0.0)
+		var peak_h: float = terrain.get_height_at(-24.0, -24.0)
+		var ocean_h: float = terrain.get_height_at(80.0, 80.0)
+
+		# Center must be dry land
+		var center_ok: bool = center_h > 1.5
+		# Peak feature in northwest quadrant must be high elevation
+		var peak_ok: bool = peak_h > 10.0
+		# Ocean edge must be submerged below sea level
+		var ocean_ok: bool = ocean_h < 0.0
+		# Height sampling must be deterministic
+		var sample_a: float = terrain.get_height_at(15.2, -18.7)
+		var sample_b: float = terrain.get_height_at(15.2, -18.7)
+		var deterministic_ok: bool = absf(sample_a - sample_b) < 0.00001
+
+		if not (center_ok and peak_ok and ocean_ok and deterministic_ok):
+			all_seeds_valid = false
+
+		terrain.free()
+
+	return all_seeds_valid

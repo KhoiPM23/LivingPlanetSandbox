@@ -480,7 +480,7 @@ func _build_bottom_hint_bar() -> void:
 	_bottom_bar.add_theme_stylebox_override("panel", style)
 
 	var hint: Label = Label.new()
-	hint.text = "[W/A/S/D] Fly/Pan | [V] Cam Mode | [B] Viewpoints | [F] Track | [1-7] Tool | [LMB] Apply | [Space] Pause | [Esc] Menu"
+	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [1-0] Tools | [Esc] Menu"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.85))
@@ -657,15 +657,24 @@ func _build_menu_modal() -> void:
 	help_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	help_lbl.add_theme_font_size_override("font_size", 10)
 	help_lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
-	help_lbl.text = """[CONTROLS]
-• [W/A/S/D]: Fly Camera forward / left / back / right
-• [E / Q]: Ascend / Descend elevation
-• [Shift]: Sprint speed boost | [Scroll Wheel]: Adjust flight speed
-• [Right Mouse]: Toggle free-look mouse camera
+	help_lbl.text = """[EXPLORATION MODES & CAMERA]
+• [V]: Toggle Dual-Mode: Flycam (6-DOF Flight) ↔ First-Person Walker
+• [W/A/S/D]: Move (Walk / Strafe in Walker; Free Flight / Pan in Flycam)
+• [Space]: Jump in First-Person Walker | Pause/Resume simulation in Flycam
+• [Shift]: Sprint boost (faster walking / flight)
+• [Right Mouse]: Toggle free-look mouse camera in Flycam mode
+• [Mouse Look]: Direct mouse look in First-Person Walker (auto-captured)
+• [Esc]: Release mouse & open Pause / Settings Menu (Resuming re-captures mouse)
+• [E / Q]: Ascend / Descend elevation in Flycam mode
+• [Scroll Wheel]: Adjust flight speed (Flycam) or zoom distance (Orbit)
+• [B]: Cycle scenic Points of Interest (POI bookmarks)
+• [F]: Track inspected entity with orbit camera
+
+[EXPERIMENT TOOLS]
 • [1 - 7, 8, 9, 0, -]: Select experiment tools (Inspect, +Moisture, -Moisture, Plant, Deer, Stalker, Delete, Heatwave, Frost, Fertilize, Disaster)
 • [[ / ]]: Decrease / Increase tool brush radius
 • [Left Mouse]: Apply selected tool at crosshair/cursor position
-• [Space]: Pause / Resume simulation clock
+• [Space / P]: Pause / Resume simulation clock
 • [1x, 2x, 5x]: Time dilation speed
 • [F5]: QuickSave experiment state | [F9]: QuickLoad experiment state
 • [F1]: Open this Help Guide | [Esc]: Toggle Pause & Settings Menu
@@ -691,11 +700,32 @@ func toggle_menu_modal() -> void:
 	_menu_modal.visible = not _menu_modal.visible
 	if _menu_modal.visible:
 		_update_modal_save_status()
+		if _camera and _camera is FreeLookCamera:
+			var cam: FreeLookCamera = _camera as FreeLookCamera
+			cam.set_input_blocked(true)
+			cam.release_mouse()
+		if _tool_controller:
+			_tool_controller.set_input_blocked(true)
+	else:
+		if _camera and _camera is FreeLookCamera:
+			var cam: FreeLookCamera = _camera as FreeLookCamera
+			cam.set_input_blocked(false)
+			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+				cam.capture_mouse()
+		if _tool_controller:
+			_tool_controller.set_input_blocked(false)
 
 func open_help_modal() -> void:
 	if not _menu_modal:
 		return
 	_menu_modal.visible = true
+	_update_modal_save_status()
+	if _camera and _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		cam.set_input_blocked(true)
+		cam.release_mouse()
+	if _tool_controller:
+		_tool_controller.set_input_blocked(true)
 	if _modal_tab_container:
 		_modal_tab_container.current_tab = 2
 
@@ -844,7 +874,12 @@ func _process(delta: float) -> void:
 		if _compass_label:
 			_compass_label.text = "🧭 %s %03.0f°" % [cam.get_compass_cardinal(), cam.get_compass_heading_degrees()]
 		if _cam_mode_btn:
-			_cam_mode_btn.text = "🎥 %s [V]" % cam.get_mode_name(cam.current_mode)
+			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+				_cam_mode_btn.text = "🚶 Walker [V]"
+			elif cam.current_mode == FreeLookCamera.CameraMode.FREE_LOOK:
+				_cam_mode_btn.text = "🎥 Flycam [V]"
+			else:
+				_cam_mode_btn.text = "🎥 %s [V]" % cam.get_mode_name(cam.current_mode)
 
 	# Update Weather & Wind Telemetry
 	if weather and _weather_btn and _weather_telemetry_label:
@@ -1109,6 +1144,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1:
 				open_help_modal()
 			KEY_SPACE:
+				if _camera is FreeLookCamera and (_camera as FreeLookCamera).current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+					pass # Space is jump in Walker mode; do not toggle pause
+				else:
+					_on_pause_pressed()
+			KEY_P:
 				_on_pause_pressed()
 			KEY_F5:
 				_on_quicksave_pressed()
@@ -1164,7 +1204,12 @@ func _on_track_entity_pressed() -> void:
 
 func _on_camera_mode_changed(mode: FreeLookCamera.CameraMode, mode_name: String) -> void:
 	if _cam_mode_btn:
-		_cam_mode_btn.text = "🎥 %s [V]" % mode_name
+		if mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+			_cam_mode_btn.text = "🚶 Walker [V]"
+		elif mode == FreeLookCamera.CameraMode.FREE_LOOK:
+			_cam_mode_btn.text = "🎥 Flycam [V]"
+		else:
+			_cam_mode_btn.text = "🎥 %s [V]" % mode_name
 	show_toast("Camera: %s" % mode_name, true)
 
 func _on_camera_bookmark_reached(_id: int, b_name: String) -> void:

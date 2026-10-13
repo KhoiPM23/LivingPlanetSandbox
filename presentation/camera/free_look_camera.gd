@@ -12,7 +12,8 @@ enum CameraMode {
 	FREE_LOOK = 0,
 	ORBIT_INSPECT = 1,
 	FOLLOW_ENTITY = 2,
-	TOP_DOWN = 3
+	TOP_DOWN = 3,
+	FIRST_PERSON_WALKER = 4
 }
 
 signal mode_changed(new_mode: CameraMode, mode_name: String)
@@ -31,7 +32,9 @@ var current_mode: CameraMode = CameraMode.FREE_LOOK
 var _velocity: Vector3 = Vector3.ZERO
 var _target_rotation: Vector2 = Vector2.ZERO # x = pitch, y = yaw
 var _mouse_captured: bool = false
+var _input_blocked: bool = false
 var _terrain_ref: IslandTerrain = null
+var _walker: FirstPersonWalker = null
 
 # --- ORBIT & FOLLOW PARAMETERS ---
 var orbit_target: Vector3 = Vector3.ZERO
@@ -107,6 +110,37 @@ func _ready() -> void:
 	_target_rotation.x = rotation.x
 	if has_node(terrain_node_path):
 		_terrain_ref = get_node(terrain_node_path) as IslandTerrain
+	_ensure_walker()
+
+func _ensure_walker() -> void:
+	if _walker == null:
+		_walker = FirstPersonWalker.new()
+		_walker.name = "FirstPersonWalkerBody"
+		_walker.top_level = true
+		add_child(_walker)
+		if _terrain_ref:
+			_walker.setup(_terrain_ref)
+
+func get_walker() -> FirstPersonWalker:
+	if _walker == null:
+		_ensure_walker()
+	return _walker
+
+func set_input_blocked(blocked: bool) -> void:
+	_input_blocked = blocked
+	if _input_blocked and _mouse_captured:
+		release_mouse()
+
+func is_input_blocked() -> bool:
+	return _input_blocked
+
+func capture_mouse() -> void:
+	_mouse_captured = true
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func release_mouse() -> void:
+	_mouse_captured = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func look_at_target(target: Vector3) -> void:
 	if is_inside_tree():
@@ -132,7 +166,27 @@ func set_camera_mode(new_mode: CameraMode, instant: bool = false) -> void:
 	var old_mode: CameraMode = current_mode
 	current_mode = new_mode
 
-	if current_mode == CameraMode.TOP_DOWN:
+	if old_mode == CameraMode.FIRST_PERSON_WALKER and new_mode != CameraMode.FIRST_PERSON_WALKER:
+		release_mouse()
+
+	if current_mode == CameraMode.FIRST_PERSON_WALKER:
+		_ensure_walker()
+		var ground_y: float = 0.0
+		if _terrain_ref:
+			ground_y = _terrain_ref.get_height_at(position.x, position.z)
+		var spawn_pos: Vector3 = Vector3(position.x, ground_y, position.z)
+		if _walker:
+			_walker.teleport_to(spawn_pos)
+			position = _walker.get_eye_position()
+		_target_rotation.y = rotation.y
+		_target_rotation.x = clampf(rotation.x, -deg_to_rad(60.0), deg_to_rad(60.0))
+		rotation.x = _target_rotation.x
+		_follow_node = null
+		_follow_callable = Callable()
+		_follow_entity_id = -1
+		if not _input_blocked:
+			capture_mouse()
+	elif current_mode == CameraMode.TOP_DOWN:
 		var target_pos: Vector3 = Vector3(position.x, top_down_altitude, position.z)
 		var target_rot: Vector2 = Vector2(-deg_to_rad(85.0), 0.0)
 		if instant:
@@ -152,18 +206,12 @@ func set_camera_mode(new_mode: CameraMode, instant: bool = false) -> void:
 	mode_changed.emit(current_mode, get_mode_name(current_mode))
 
 func cycle_camera_mode() -> void:
-	match current_mode:
-		CameraMode.FREE_LOOK:
-			set_camera_mode(CameraMode.TOP_DOWN)
-		CameraMode.TOP_DOWN:
-			if orbit_target != Vector3.ZERO:
-				set_camera_mode(CameraMode.ORBIT_INSPECT)
-			else:
-				set_camera_mode(CameraMode.FREE_LOOK)
-		CameraMode.ORBIT_INSPECT:
-			set_camera_mode(CameraMode.FREE_LOOK)
-		CameraMode.FOLLOW_ENTITY:
-			set_camera_mode(CameraMode.FREE_LOOK)
+	if current_mode == CameraMode.FREE_LOOK:
+		set_camera_mode(CameraMode.FIRST_PERSON_WALKER)
+	elif current_mode == CameraMode.FIRST_PERSON_WALKER:
+		set_camera_mode(CameraMode.FREE_LOOK)
+	else:
+		set_camera_mode(CameraMode.FREE_LOOK)
 
 func get_mode_name(mode: CameraMode) -> String:
 	match mode:
@@ -171,6 +219,7 @@ func get_mode_name(mode: CameraMode) -> String:
 		CameraMode.ORBIT_INSPECT: return "Orbit View"
 		CameraMode.FOLLOW_ENTITY: return "Tracking Entity"
 		CameraMode.TOP_DOWN: return "Tactical Map"
+		CameraMode.FIRST_PERSON_WALKER: return "First-Person Walker"
 		_: return "Unknown"
 
 # =========================================================================
@@ -313,18 +362,30 @@ func get_compass_cardinal() -> String:
 # INPUT HANDLING
 # =========================================================================
 func _unhandled_input(event: InputEvent) -> void:
+	if _input_blocked:
+		return
+
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.is_pressed():
-			_toggle_mouse_capture(not _mouse_captured)
+			if current_mode == CameraMode.FREE_LOOK:
+				_toggle_mouse_capture(not _mouse_captured)
+			elif current_mode == CameraMode.FIRST_PERSON_WALKER:
+				if not _mouse_captured:
+					capture_mouse()
+		elif mb.button_index == MOUSE_BUTTON_LEFT and mb.is_pressed():
+			if current_mode == CameraMode.FIRST_PERSON_WALKER and not _mouse_captured:
+				capture_mouse()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.is_pressed():
 			_handle_zoom_in()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.is_pressed():
 			_handle_zoom_out()
 	elif event is InputEventKey and event.is_pressed() and not event.is_echo():
 		if event.keycode == KEY_ESCAPE:
-			if _mouse_captured:
-				_toggle_mouse_capture(false)
+			if current_mode == CameraMode.FIRST_PERSON_WALKER:
+				release_mouse()
+			elif _mouse_captured:
+				release_mouse()
 			elif current_mode != CameraMode.FREE_LOOK:
 				set_camera_mode(CameraMode.FREE_LOOK)
 		elif event.keycode == KEY_V:
@@ -357,10 +418,10 @@ func _handle_zoom_out() -> void:
 
 func _handle_mouse_look(rel: Vector2) -> void:
 	match current_mode:
-		CameraMode.FREE_LOOK:
+		CameraMode.FREE_LOOK, CameraMode.FIRST_PERSON_WALKER:
 			_target_rotation.y -= rel.x * mouse_sensitivity
 			_target_rotation.x -= rel.y * mouse_sensitivity
-			_target_rotation.x = clamp(_target_rotation.x, -deg_to_rad(88.0), deg_to_rad(88.0))
+			_target_rotation.x = clamp(_target_rotation.x, -deg_to_rad(85.0), deg_to_rad(85.0))
 		CameraMode.ORBIT_INSPECT, CameraMode.FOLLOW_ENTITY:
 			orbit_azimuth -= rel.x * mouse_sensitivity * 1.5
 			orbit_elevation += rel.y * mouse_sensitivity * 1.5
@@ -409,6 +470,47 @@ func _start_smooth_transition_lookat(target_pos: Vector3, look_at_pt: Vector3, d
 # =========================================================================
 # MAIN PROCESS UPDATE
 # =========================================================================
+func _physics_process(delta: float) -> void:
+	if current_mode == CameraMode.FIRST_PERSON_WALKER:
+		_process_walker(delta)
+
+func _process_walker(delta: float) -> void:
+	if _walker == null:
+		_ensure_walker()
+	if _walker == null:
+		return
+
+	rotation.y = lerp_angle(rotation.y, _target_rotation.y, smooth_factor * delta)
+	rotation.x = lerp_angle(rotation.x, _target_rotation.x, smooth_factor * delta)
+
+	if _input_blocked:
+		position = _walker.get_eye_position()
+		return
+
+	var wish_dir: Vector3 = Vector3.ZERO
+	var fwd: bool = Input.is_action_pressed("move_forward") or Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP)
+	var bwd: bool = Input.is_action_pressed("move_backward") or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)
+	var lft: bool = Input.is_action_pressed("move_left") or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
+	var rgt: bool = Input.is_action_pressed("move_right") or Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
+
+	var cam_yaw: float = rotation.y
+	var fwd_vec: Vector3 = Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
+	var rgt_vec: Vector3 = Vector3(cos(cam_yaw), 0.0, -sin(cam_yaw))
+
+	if fwd: wish_dir += fwd_vec
+	if bwd: wish_dir -= fwd_vec
+	if lft: wish_dir -= rgt_vec
+	if rgt: wish_dir += rgt_vec
+
+	if wish_dir.length_squared() > 0.001:
+		wish_dir = wish_dir.normalized()
+
+	var is_sprinting: bool = Input.is_key_pressed(KEY_SHIFT)
+	var want_jump: bool = Input.is_key_pressed(KEY_SPACE)
+
+	var eye_pos: Vector3 = _walker.move_walker(delta, wish_dir, is_sprinting, want_jump)
+	position = eye_pos
+
 func _process(delta: float) -> void:
 	if not _terrain_ref and has_node(terrain_node_path):
 		_terrain_ref = get_node(terrain_node_path) as IslandTerrain
@@ -416,6 +518,13 @@ func _process(delta: float) -> void:
 	if _in_transition:
 		_process_transition(delta)
 		_enforce_boundaries(delta)
+		return
+
+	if current_mode == CameraMode.FIRST_PERSON_WALKER:
+		rotation.y = lerp_angle(rotation.y, _target_rotation.y, smooth_factor * delta)
+		rotation.x = lerp_angle(rotation.x, _target_rotation.x, smooth_factor * delta)
+		if _walker:
+			position = _walker.get_eye_position()
 		return
 
 	match current_mode:

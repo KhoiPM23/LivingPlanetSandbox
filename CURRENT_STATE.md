@@ -4,7 +4,7 @@
 ---
 
 ### 1. Phase Status
-- **Current Milestone:** Overnight Orchestration — BLOCK 6 Completed (Regression, Release, Tài liệu và Bàn giao).
+- **Current Milestone:** BLOCK 1 — Dual-Mode Exploration Camera (Flycam & First-Person Walker) Completed.
 - **Engine Version:** Godot Engine v4.6.3.stable.official.7d41c59c4 (Windows x86_64).
 - **Renderer:** Forward Plus (Vulkan 1.4.323 on Intel Iris Xe Graphics).
 - **Git Branch:** `main`.
@@ -33,12 +33,12 @@
 | **Causal Cascade Tracking & Telemetry** | PASS | Unit Test / Runtime | `CausalTracker` correlating player interventions to vegetation mortality, blooming, herbivore starvation, and displaying in HUD/Inspector |
 | **Visual Polish & Shading** | PASS | Runtime Vulkan | Slope-dependent rock cliff vertex blending ($>0.38$), warm shoreline sand ($h < 1.1\text{m}$), alpine snow summits ($h > 12.0\text{m}$), simplex organic noise |
 | **Atmospheric Depth Perspective** | PASS | Runtime Vulkan | Volumetric depth distance fog ($35\text{m} \to 140\text{m}$) synced with diurnal celestial horizon light color |
-| **Multi-Mode Camera Exploration** | PASS | Unit Test / Runtime | 4 modes (`FREE_LOOK`, `ORBIT_INSPECT`, `FOLLOW_ENTITY`, `TOP_DOWN`), 5 scenic bookmarks, live compass telemetry, smooth easing |
+| **Dual-Mode Exploration Camera** | PASS | Unit Test / Runtime | 5 modes (`FREE_LOOK`, `FIRST_PERSON_WALKER`, `ORBIT_INSPECT`, `FOLLOW_ENTITY`, `TOP_DOWN`), `V` toggle, `CharacterBody3D` walker physics, 1.65m eye level, captured mouse, Esc release & modal blocking |
 | **State-Driven Fauna Animations** | PASS | Runtime Vulkan | Procedural animations reflecting simulation state: resting, grazing, sprinting, shivering/starving, stalking |
 | **In-Engine Menu Modal & Settings** | PASS | Unit Test / Runtime | Centered glassmorphic modal (`[Esc]`) with Simulation controls (Resume, Re-roll, Save, Load, Reset, Quit), functional Settings, and Controls/Guide tab (`[F1]`) |
 | **Schema v2 World Persistence** | PASS | Unit Test / Runtime | Complete state serialization (seed, clock, weather with wind vector, 1024 cells with fertilities, flora, fauna with genomes, metrics, interventions) |
 | **Observability Dashboard & HUD** | PASS | Runtime Vulkan | Glassmorphic HUD: clock, compass, weather cycle button `[Y]`, live wind & wetness telemetry, camera modes, POI selector, tool palette, Inspector, charts |
-| **Automated Test Runner** | PASS | Headless Test Suite | All 16 suites, 74 contract tests passing with 0 failures |
+| **Automated Test Runner** | PASS | Headless Test Suite | All 16 suites, 78 contract tests passing with 0 failures |
 | **GPU Performance Optimization** | PASS | Vulkan 1.4 Benchmark | Draw calls cut -33.7% (1,009 peak), primitives cut -40.2% (822k peak), p95 frame time 47.24 ms on Intel Iris Xe; 41.5 average FPS |
 | **Windows Release Export** | PASS | CLI & Standalone Executable | Compiled Windows x64 release package at `build/release/LivingPlanetSandbox.exe` |
-| **Visual QA Capture** | PASS | Viewport Capture | 7 authentic runtime screenshots captured from Vulkan Forward+ runtime |
+| **Visual QA Capture** | PASS | Viewport Capture | Dual-mode runtime screenshots (`screenshot_flycam_view.png`, `screenshot_walker_view.png`) and 7 Block 7 screenshots |

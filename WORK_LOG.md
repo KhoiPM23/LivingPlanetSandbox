@@ -457,3 +457,36 @@ es://presentation/ui/hud.gd):**
 - **Deliverables & Handoff:**
   - Clean working tree with zero uncommitted artifacts.
   - Git repository synchronized with remote origin `main`.
+
+### BLOCK 1 — Dual-Mode Exploration Camera (COMPLETED)
+- **First-Person Walker Body (`res://presentation/camera/first_person_walker.gd`):**
+  - Implemented `FirstPersonWalker` extending `CharacterBody3D` with physical capsule collision (`radius = 0.35m`, `height = 1.75m`).
+  - Maintains realistic human eye level at 1.65m above physical terrain surface via physical collision (layer 2, mask 1).
+  - Traverses slopes smoothly up to 48° with floor snap (`floor_snap_length = 0.35m`, `floor_stop_on_slope = true`).
+  - Implemented gravity ($19.6\text{ m/s}^2$), jumping impulse ($5.2\text{ m/s}$), walking ($6.0\text{ m/s}$), and sprinting ($10.5\text{ m/s}$).
+  - Water dampening (30% speed reduction in shallow water) and island boundary limits (radius 74m).
+  - Robust out-of-tree guards (`is_inside_tree()`) for safe execution in headless testing and scene transitions.
+- **Dual-Mode Exploration Controller (`res://presentation/camera/free_look_camera.gd`):**
+  - Added `FIRST_PERSON_WALKER = 4` to `CameraMode` enum without breaking existing Flycam, Orbit, Follow, or Top-Down modes.
+  - Seamless toggle between Free Flight Flycam and First-Person Walker via `V` key.
+  - Flycam retains RMB to toggle mouse look.
+  - First-Person Walker automatically captures mouse on entry for intuitive FPS looking, with pitch clamped to $[-85^\circ, +85^\circ]$.
+  - Implemented `capture_mouse()`, `release_mouse()`, `set_input_blocked(bool)`, and `is_input_blocked()`.
+- **Menu, Input Blocking, and Tools Integration (`res://presentation/ui/hud.gd`, `player_tool_controller.gd`):**
+  - Pressing `Esc` in Walker mode releases mouse capture and opens the main menu/pause modal.
+  - Resuming simulation from the menu modal restores captured mouse in Walker mode.
+  - Gameplay inputs (movement, mouse look, tool execution, tool switching) are completely blocked while the menu modal is open.
+  - Center-screen crosshair raycasting supported for intervention tools in First-Person Walker mode.
+  - Space key functions as Jump in Walker mode, while preserving simulation pause/resume in Flycam mode (with `P` supported universally).
+  - Controls & Guide in Menu Modal and bottom HUD hint bar updated with dual-mode exploration controls.
+- **Testing & Verification:**
+  - Added 4 contract test suites to `tests/test_camera_exploration.gd`:
+    1. `test_first_person_walker_mode_and_transitions`: Verifies mode toggle, names, and rapid 5-cycle toggles.
+    2. `test_walker_physics_and_eye_height`: Verifies capsule shape dimensions, 1.65m eye level, jump velocity, gravity, sprint speed, and boundary clamping.
+    3. `test_walker_menu_input_blocking`: Verifies input blocking and mouse release when menu modal is open.
+    4. `test_multi_seed_world_generation`: Verifies procedural generation determinism, dry land center, and peak feature across 3 distinct seeds (`1337`, `42069`, `99999`).
+  - Test runner: **78 Passed across 16 suites, 0 Failed**.
+  - Release smoke test: **7/7 Passed**.
+  - Visual QA script (`tests/visual_qa_camera_dual.gd`) rendered authentic runtime screenshots using OpenGL 3.3.0 hardware acceleration:
+    - `screenshot_flycam_view.png` (1280x720): High-angle scenic Flycam flight overview showing full island, wildlife, vegetation, and HUD.
+    - `screenshot_walker_view.png` (1280x720): Authentic eye-level first-person view at 1.65m on grassy terrain slope looking up toward the summit monolith.

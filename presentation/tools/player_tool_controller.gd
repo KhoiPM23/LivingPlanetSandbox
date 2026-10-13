@@ -32,6 +32,7 @@ enum ToolMode {
 var active_tool: ToolMode = ToolMode.INSPECT
 var brush_radius: float = 8.0
 var moisture_step: float = 0.20
+var input_blocked: bool = false
 
 var _camera: Camera3D = null
 var _bootstrap: WorldBootstrap = null
@@ -41,6 +42,16 @@ var _brush_visual: MeshInstance3D = null
 var _brush_material: StandardMaterial3D = null
 var _current_hit_point: Vector3 = Vector3.ZERO
 var _has_hit: bool = false
+
+func set_input_blocked(blocked: bool) -> void:
+	input_blocked = blocked
+	if input_blocked:
+		_has_hit = false
+		if _brush_visual:
+			_brush_visual.visible = false
+
+func is_input_blocked() -> bool:
+	return input_blocked
 
 func _ready() -> void:
 	if has_node(camera_path):
@@ -141,9 +152,20 @@ func _update_tool_visual_style() -> void:
 	_brush_material.albedo_color = col
 
 func _process(_delta: float) -> void:
+	if input_blocked:
+		_has_hit = false
+		if _brush_visual:
+			_brush_visual.visible = false
+		return
 	_update_mouse_raycast()
 
 func _update_mouse_raycast() -> void:
+	if input_blocked:
+		_has_hit = false
+		if _brush_visual:
+			_brush_visual.visible = false
+		return
+
 	if not _camera:
 		var vp: Viewport = get_viewport()
 		if vp:
@@ -154,12 +176,20 @@ func _update_mouse_raycast() -> void:
 			_brush_visual.visible = false
 		return
 
-	var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+	var mouse_pos: Vector2 = Vector2.ZERO
+	var vp_node: Viewport = get_viewport()
+	if _camera is FreeLookCamera and (_camera as FreeLookCamera).current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+		if vp_node:
+			mouse_pos = vp_node.get_visible_rect().size * 0.5
+	else:
+		if vp_node:
+			mouse_pos = vp_node.get_mouse_position()
+
 	var ray_origin: Vector3 = _camera.project_ray_origin(mouse_pos)
 	var ray_dir: Vector3 = _camera.project_ray_normal(mouse_pos)
 
 	# Raycast onto terrain static collider
-	var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state if is_inside_tree() else null
 	if space_state:
 		var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(
 			ray_origin,
@@ -192,6 +222,9 @@ func _update_mouse_raycast() -> void:
 		_brush_visual.visible = false
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_blocked:
+		return
+
 	# Tool selection hotkeys [1 - 7]
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		match event.keycode:
@@ -219,7 +252,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			execute_active_tool()
 
 func execute_active_tool() -> void:
-	if not _has_hit or not _bootstrap:
+	if input_blocked or not _has_hit or not _bootstrap:
 		return
 
 	match active_tool:
