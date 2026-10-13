@@ -1,0 +1,83 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://core/bootstrap/world_bootstrap.gd" id="2_bootstrap"]
+[ext_resource type="Script" path="res://presentation/debug/debug_overlay.gd" id="3_debug"]
+[ext_resource type="Script" path="res://presentation/camera/free_look_camera.gd" id="4_camera"]
+[ext_resource type="Script" path="res://presentation/environment/island_terrain.gd" id="5_island"]
+[ext_resource type="Script" path="res://presentation/environment/water_plane.gd" id="6_water"]
+[ext_resource type="Script" path="res://presentation/environment/day_night_cycle.gd" id="7_cycle"]
+[ext_resource type="Script" path="res://presentation/environment/vegetation_scatter.gd" id="8_scatter"]
+[ext_resource type="Script" path="res://presentation/ui/hud.gd" id="9_hud"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.28, 0.52, 0.82, 1)
+sky_horizon_color = Color(0.72, 0.78, 0.85, 1)
+ground_bottom_color = Color(0.18, 0.24, 0.22, 1)
+ground_horizon_color = Color(0.72, 0.78, 0.85, 1)
+
+[sub_resource type="Sky" id="Sky_env"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_env")
+ambient_light_source = 2
+ambient_light_color = Color(0.65, 0.75, 0.88, 1)
+ambient_light_sky_contribution = 0.75
+ambient_light_energy = 0.6
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.3
+fog_enabled = true
+fog_light_color = Color(0.68, 0.76, 0.86, 1)
+fog_density = 0.004
+fog_sky_affect = 0.4
+fog_depth_begin = 35.0
+fog_depth_end = 140.0
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldBootstrap" type="Node" parent="."]
+script = ExtResource("2_bootstrap")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 25, 0)
+light_color = Color(1.0, 0.96, 0.9, 1)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 95.0
+directional_shadow_blend_splits = true
+directional_shadow_fade_start = 0.85
+
+
+[node name="DayNightCycle" type="Node3D" parent="."]
+script = ExtResource("7_cycle")
+sun_path = NodePath("../DirectionalLight3D")
+environment_path = NodePath("../WorldEnvironment")
+
+[node name="IslandTerrain" type="StaticBody3D" parent="."]
+script = ExtResource("5_island")
+
+[node name="WaterPlane" type="MeshInstance3D" parent="."]
+script = ExtResource("6_water")
+
+[node name="VegetationScatter" type="Node3D" parent="."]
+script = ExtResource("8_scatter")
+
+[node name="FreeLookCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 25, 18, 45)
+script = ExtResource("4_camera")
+
+[node name="WorldHUD" type="CanvasLayer" parent="."]
+script = ExtResource("9_hud")
+bootstrap_path = NodePath("../WorldBootstrap")
+camera_path = NodePath("../FreeLookCamera")
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("3_debug")
+bootstrap_path = NodePath("../WorldBootstrap")

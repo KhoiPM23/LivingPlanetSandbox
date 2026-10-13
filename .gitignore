@@ -1,0 +1,20 @@
+# Godot 4 .gitignore
+.godot/
+*.translation
+*.import
+
+# Mono/C# specific (if any generated)
+.mono/
+[Bb]in/
+[Oo]bj/
+*.csproj
+*.sln
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Build exports
+build/
+export/
+*.tmp
