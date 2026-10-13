@@ -374,3 +374,35 @@ es://presentation/ui/hud.gd):**
     5. 	est_weather_persistence_roundtrip: Verifies lossless save/load persistence of weather, wind vector, and duration.
   - Test runner: **63 Passed across 14 suites, 0 Failed**.
   - Release smoke test: **7/7 Passed**.
+
+### BLOCK 4 — Graphics Presets và Telemetry Tiến hóa (COMPLETED)
+- **Scalable Graphics Presets Architecture (
+es://presentation/graphics/graphics_presets.gd):**
+  - Designed decoupled GraphicsPresets class defining 3 quality profiles tailored to hardware constraints:
+    1. LOW (Battery Saver): 3D render scale 75%, Directional shadows disabled, Glow disabled, 350 grass instances, 160 rain particles. Max savings for low-power operation.
+    2. BALANCED (Intel Iris Xe Optimized - Default): 3D render scale 85%, Fast directional shadows (2K atlas, 65m cutoff), Glow enabled (intensity 0.25), 700 grass instances, 350 rain particles. Targets solid 40+ FPS on Iris Xe graphics without visual degradation.
+    3. HIGH (Desktop GPU / Fidelity): Native 100% render scale, 4K shadow atlas (95m cutoff), Glow intensity 0.35, 1000 grass instances, 550 rain particles.
+  - Implemented pply_preset(preset, scene_root) applying settings safely across Viewport, DirectionalLight3D, WorldEnvironment, VegetationScatter, and WeatherEffectsController.
+  - Config persistence: save_to_config and load_from_config storing settings in user://settings_graphics.cfg.
+  - Integrated into In-Engine Settings modal: [Graphics Preset: Balanced (Intel Iris Xe) ▾] button allows one-click cycling with instant visual feedback and toast confirmation.
+- **Evolutionary Diversity Telemetry (
+es://core/ecosystem/ecosystem_metrics.gd & ecosystem_coordinator.gd):**
+  - Integrated live genetic diversity calculations:
+    - llele_speed_variance: Variance $\sigma^2_v$ of locomotory speed across living herbivore herd.
+    - llele_drought_variance: Variance $\sigma^2_d$ of drought tolerance across living flora.
+    - genetic_diversity_index: Overall diversity index ( = 3.0\sigma_v + 4.0\sigma_d$).
+    - ottleneck_warning: Real-time warning flag activated when genetic diversity drops below .04$ in populated herds, signaling genetic bottleneck/inbreeding risk.
+    - evolution_history: Generational time-series buffer (up to 50 snapshots) logging generational progression, allele drift, diversity index, and population sizes over time.
+- **HUD & Telemetry Visualization (
+es://presentation/ui/hud.gd):**
+  - Top telemetry bar displays live diversity index (Div: 0.68) and alerts with [⚠️ Bottleneck] when gene pool becomes homogenous.
+  - Settings tab features graphic preset switcher button.
+- **Testing & Verification:**
+  - Created 	ests/test_graphics_and_evolution_telemetry.gd with 5 contract tests:
+    1. 	est_graphics_presets_switching_and_parameters: Verifies rendering parameters (scale, shadows, glow) across LOW, BALANCED, and HIGH.
+    2. 	est_graphics_preset_config_persistence: Verifies configuration save and load roundtrips.
+    3. 	est_evolution_telemetry_variance_and_diversity: Validates variance formulas and bottleneck warning triggers.
+    4. 	est_evolution_snapshot_recording: Validates historical evolution snapshots across simulation time.
+    5. 	est_iris_xe_balanced_workload_bounds: Verifies Iris Xe optimized preset hardware bounds.
+  - Test runner: **68 Passed across 15 suites, 0 Failed**.
+  - Release smoke test: **7/7 Passed**.

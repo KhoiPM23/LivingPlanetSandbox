@@ -149,9 +149,35 @@ func step_simulation(delta_sim: float) -> void:
 		metrics.avg_plant_drought_tolerance = total_drought_tol / float(plants.size())
 	metrics.max_generation = max_gen
 
+	# Compute Allele Variances and Diversity
+	var speed_sq_sum: float = 0.0
+	for h in herbs:
+		if h.genome:
+			var diff: float = h.genome.speed_mult - metrics.avg_herbivore_speed
+			speed_sq_sum += diff * diff
+	var spd_var: float = (speed_sq_sum / float(herbs.size())) if herbs.size() > 1 else 0.0
+	metrics.allele_speed_variance = spd_var
+
+	var drought_sq_sum: float = 0.0
+	for p in plants:
+		if p.genome:
+			var diff_p: float = p.genome.drought_tolerance - metrics.avg_plant_drought_tolerance
+			drought_sq_sum += diff_p * diff_p
+	var drg_var: float = (drought_sq_sum / float(plants.size())) if plants.size() > 1 else 0.0
+	metrics.allele_drought_variance = drg_var
+
+	# Diversity Index: combination of standard deviations
+	var spd_std: float = sqrt(spd_var)
+	var drg_std: float = sqrt(drg_var)
+	metrics.genetic_diversity_index = clampf((spd_std * 3.0 + drg_std * 4.0), 0.0, 2.0)
+	metrics.bottleneck_warning = (metrics.genetic_diversity_index < 0.04 and herbs.size() > 5)
+
 	var duration_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
 	metrics.last_sim_step_duration_ms = duration_ms
 	metrics.sample_history()
+
+	if _world_clock and int(_world_clock.tick_count) % 10 == 0:
+		metrics.sample_evolution_snapshot(_world_clock.simulation_time)
 
 	if _event_bus:
 		_event_bus.publish("ecosystem_metrics_updated", metrics.to_dict())

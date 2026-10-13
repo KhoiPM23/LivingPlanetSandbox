@@ -62,6 +62,7 @@ var _sens_label: Label
 var _flight_label: Label
 var _fog_btn: Button
 var _screen_mode_btn: Button
+var _preset_btn: Button
 
 # Camera & Exploration
 var _compass_label: Label
@@ -576,6 +577,12 @@ func _build_menu_modal() -> void:
 	tab_settings.name = "Settings"
 	tab_settings.add_theme_constant_override("separation", 10)
 
+	_preset_btn = Button.new()
+	_preset_btn.text = "Graphics: " + GraphicsPresets.get_preset_name(GraphicsPresets.current_preset) + " ▾"
+	_preset_btn.custom_minimum_size = Vector2(0, 30)
+	_preset_btn.pressed.connect(_on_cycle_graphics_preset)
+	tab_settings.add_child(_preset_btn)
+
 	_screen_mode_btn = Button.new()
 	_screen_mode_btn.text = "Window Mode: Windowed (1280x720)"
 	_screen_mode_btn.custom_minimum_size = Vector2(0, 30)
@@ -698,6 +705,16 @@ func _update_modal_save_status() -> void:
 		_modal_load_btn.disabled = true
 		_modal_load_btn.text = "Load Save State [F9] (No Save Found)"
 
+func _on_cycle_graphics_preset() -> void:
+	var next_p: int = (int(GraphicsPresets.current_preset) + 1) % 3
+	var preset: GraphicsPresets.Preset = next_p as GraphicsPresets.Preset
+	var root_node: Node = get_tree().root if get_tree() else self
+	var changes: Dictionary = GraphicsPresets.apply_preset(preset, root_node)
+	GraphicsPresets.save_to_config(preset)
+	if _preset_btn:
+		_preset_btn.text = "Graphics: " + GraphicsPresets.get_preset_name(preset) + " ▾"
+	show_toast("Applied Preset: " + GraphicsPresets.get_preset_name(preset), true)
+
 func _on_toggle_screen_mode() -> void:
 	var mode: DisplayServer.WindowMode = DisplayServer.window_get_mode()
 	if mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
@@ -794,9 +811,13 @@ func _process(delta: float) -> void:
 		var m: EcosystemMetrics = coord.metrics
 		var w_name: String = WeatherSystem.get_state_name(weather.current_state) if weather else "Clear"
 
-		_telemetry_label.text = "Weather: %s | Max Gen: %d\nPlants: %d | Biomass: %.1f kg (DroughtTol: %.0f%%)\nDeer: %d (Avg Spd: %.2fx) | Stalkers: %d\nBirths: %d | Deaths: %d (Tick: %.2fms)" % [
+		var div_str: String = "Div: %.2f" % m.genetic_diversity_index
+		if m.bottleneck_warning:
+			div_str += " [⚠️ Bottleneck]"
+		_telemetry_label.text = "Weather: %s | Max Gen: %d | %s\nPlants: %d | Biomass: %.1f kg (DroughtTol: %.0f%%)\nDeer: %d (Avg Spd: %.2fx) | Stalkers: %d\nBirths: %d | Deaths: %d (Tick: %.2fms)" % [
 			w_name,
 			m.max_generation,
+			div_str,
 			m.plant_count,
 			m.total_biomass,
 			m.avg_plant_drought_tolerance * 100.0,
