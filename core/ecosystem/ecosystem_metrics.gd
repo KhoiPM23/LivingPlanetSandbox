@@ -1,0 +1,111 @@
+class_name EcosystemMetrics
+extends RefCounted
+
+## Observability and metrics tracker for Living Planet Sandbox causal ecosystem.
+## Collects authentic state metrics (biomass, populations, births, deaths, food availability).
+
+var plant_count: int = 0
+var herbivore_count: int = 0
+var predator_count: int = 0
+
+var total_biomass: float = 0.0 # Total plant biomass (biomass units)
+var average_plant_health: float = 0.0 # 0.0 - 100.0%
+var average_plant_moisture: float = 0.0 # 0.0 - 1.0
+
+var average_herbivore_energy: float = 0.0 # 0.0 - 100.0%
+var average_herbivore_health: float = 0.0 # 0.0 - 100.0%
+var average_predator_energy: float = 0.0 # 0.0 - 100.0%
+
+var food_availability_ratio: float = 1.0 # Available biomass / herd demand
+
+# Cumulative event counters
+var births_total: int = 0
+var births_by_type: Dictionary = {"plant": 0, "herbivore": 0, "predator": 0}
+
+var deaths_total: int = 0
+var deaths_by_cause: Dictionary = {
+	"plant_decay": 0,
+	"plant_drought": 0,
+	"herbivore_starvation": 0,
+	"herbivore_predation": 0,
+	"herbivore_old_age": 0,
+	"predator_starvation": 0,
+	"predator_old_age": 0
+}
+
+# Performance telemetry
+var last_sim_step_duration_ms: float = 0.0
+
+# Telemetry history buffer (up to 40 samples for real-time HUD charts)
+var history: Array[Dictionary] = []
+const MAX_HISTORY_SAMPLES: int = 40
+
+func sample_history() -> void:
+	history.append({
+		"biomass": total_biomass,
+		"herbivores": herbivore_count,
+		"predators": predator_count,
+		"plants": plant_count
+	})
+	if history.size() > MAX_HISTORY_SAMPLES:
+		history.pop_front()
+
+func record_birth(entity_type: String) -> void:
+	births_total += 1
+	if births_by_type.has(entity_type):
+		births_by_type[entity_type] += 1
+	else:
+		births_by_type[entity_type] = 1
+
+func record_death(entity_type: String, cause: String) -> void:
+	deaths_total += 1
+	var key: String = "%s_%s" % [entity_type, cause]
+	if deaths_by_cause.has(key):
+		deaths_by_cause[key] += 1
+	else:
+		deaths_by_cause[key] = 1
+
+func reset() -> void:
+	history.clear()
+	plant_count = 0
+
+	herbivore_count = 0
+	predator_count = 0
+	total_biomass = 0.0
+	average_plant_health = 0.0
+	average_plant_moisture = 0.0
+	average_herbivore_energy = 0.0
+	average_herbivore_health = 0.0
+	average_predator_energy = 0.0
+	food_availability_ratio = 1.0
+	births_total = 0
+	births_by_type = {"plant": 0, "herbivore": 0, "predator": 0}
+	deaths_total = 0
+	deaths_by_cause = {
+		"plant_decay": 0,
+		"plant_drought": 0,
+		"herbivore_starvation": 0,
+		"herbivore_predation": 0,
+		"herbivore_old_age": 0,
+		"predator_starvation": 0,
+		"predator_old_age": 0
+	}
+	last_sim_step_duration_ms = 0.0
+
+func to_dict() -> Dictionary:
+	return {
+		"plant_count": plant_count,
+		"herbivore_count": herbivore_count,
+		"predator_count": predator_count,
+		"total_biomass": snapped(total_biomass, 0.1),
+		"average_plant_health": snapped(average_plant_health, 0.1),
+		"average_herbivore_energy": snapped(average_herbivore_energy, 0.1),
+		"average_herbivore_health": snapped(average_herbivore_health, 0.1),
+		"average_predator_energy": snapped(average_predator_energy, 0.1),
+		"food_availability_ratio": snapped(food_availability_ratio, 0.01),
+		"births_total": births_total,
+		"births_by_type": births_by_type.duplicate(),
+		"deaths_total": deaths_total,
+		"deaths_by_cause": deaths_by_cause.duplicate(),
+		"sim_step_ms": snapped(last_sim_step_duration_ms, 0.01)
+	}

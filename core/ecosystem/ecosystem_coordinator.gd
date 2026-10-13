@@ -1,0 +1,173 @@
+class_name EcosystemCoordinator
+extends RefCounted
+
+## Central coordinator orchestrating flora and fauna simulations, spatial partitioning,
+## metrics collection, and player environmental interventions.
+
+const FloraSimulation = preload("res://core/ecosystem/flora_simulation.gd")
+const FaunaSimulation = preload("res://core/ecosystem/fauna_simulation.gd")
+const EcosystemMetrics = preload("res://core/ecosystem/ecosystem_metrics.gd")
+
+var flora_sim: FloraSimulation
+var fauna_sim: FaunaSimulation
+var metrics: EcosystemMetrics
+
+var _rng: RandomNumberGenerator
+var _world_seed: WorldSeed
+var _world_clock: WorldClock
+var _event_bus: WorldEventBus
+var _entity_registry: EntityRegistry
+var _env_grid: EnvironmentalGrid
+var _weather_system: WeatherSystem
+var _scheduler: SimulationScheduler
+
+var _terrain_height_func: Callable = Callable()
+var is_active: bool = true
+
+func _init(
+	world_seed: WorldSeed,
+	world_clock: WorldClock,
+	event_bus: WorldEventBus,
+	entity_registry: EntityRegistry,
+	env_grid: EnvironmentalGrid,
+	weather_system: WeatherSystem,
+	scheduler: SimulationScheduler = null
+) -> void:
+	_world_seed = world_seed
+	_world_clock = world_clock
+	_event_bus = event_bus
+	_entity_registry = entity_registry
+	_env_grid = env_grid
+	_weather_system = weather_system
+	_scheduler = scheduler
+	
+	_rng = world_seed.get_stream("ecology") if world_seed != null else RandomNumberGenerator.new()
+	metrics = EcosystemMetrics.new()
+	flora_sim = FloraSimulation.new(_rng, entity_registry, metrics, event_bus)
+	fauna_sim = FaunaSimulation.new(_rng, entity_registry, metrics, event_bus)
+	
+	if _scheduler:
+		# Run ecosystem simulation at 2Hz (every 5 ticks at 10Hz clock)
+		_scheduler.register_task("ecosystem_tick", 5, Callable(self, "_on_ecosystem_tick"))
+
+func bind_terrain_height(callable: Callable) -> void:
+	_terrain_height_func = callable
+
+func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14, predator_count: int = 2) -> void:
+	# Clear existing
+	flora_sim.clear()
+	fauna_sim.clear()
+	metrics.reset()
+	
+	# 1. Spawn initial flora across habitable island cells
+	for i: int in range(plant_count):
+		var angle: float = _rng.randf() * TAU
+		var dist: float = _rng.randf_range(6.0, 58.0)
+		var x: float = cos(angle) * dist
+		var z: float = sin(angle) * dist
+		var y: float = 0.5
+		if _terrain_height_func.is_valid():
+			y = _terrain_height_func.call(x, z)
+			
+		# Check above water level
+		if y > 0.4:
+			var species: String = "shrub_bush" if (_rng.randf() < 0.35) else "grass_patch"
+			var initial_bio: float = _rng.randf_range(2.0, 6.0)
+			flora_sim.spawn_plant(species, Vector3(x, y, z), initial_bio)
+			
+	# 2. Spawn initial herbivores in meadow/forest zones
+	for i: int in range(herbivore_count):
+		var angle: float = _rng.randf() * TAU
+		var dist: float = _rng.randf_range(8.0, 45.0)
+		var x: float = cos(angle) * dist
+		var z: float = sin(angle) * dist
+		var y: float = 1.0
+		if _terrain_height_func.is_valid():
+			y = _terrain_height_func.call(x, z)
+		if y > 0.4:
+			var initial_energy: float = _rng.randf_range(70.0, 95.0)
+			fauna_sim.spawn_herbivore(Vector3(x, y, z), initial_energy)
+			
+	# 3. Spawn initial predators near higher elevation
+	for i: int in range(predator_count):
+		var angle: float = _rng.randf() * TAU
+		var dist: float = _rng.randf_range(20.0, 48.0)
+		var x: float = cos(angle) * dist
+		var z: float = sin(angle) * dist
+		var y: float = 2.0
+		if _terrain_height_func.is_valid():
+			y = _terrain_height_func.call(x, z)
+		if y > 0.4:
+			fauna_sim.spawn_predator(Vector3(x, y, z), 85.0)
+			
+	if _event_bus:
+		_event_bus.publish("ecosystem_populated", {
+			"plants": flora_sim.get_plant_count(),
+			"herbivores": fauna_sim.get_herbivore_count(),
+			"predators": fauna_sim.get_predator_count()
+		})
+
+func _on_ecosystem_tick(_tick_num: int, _sim_time: float) -> void:
+	if not is_active:
+		return
+	var time_scale: float = _world_clock.time_scale if _world_clock != null else 1.0
+	var delta_sim: float = 0.5 * time_scale
+	step_simulation(delta_sim)
+
+func step_simulation(delta_sim: float) -> void:
+	var start_usec: int = Time.get_ticks_usec()
+	
+	# Step plant growth and environmental decay
+	if flora_sim and _env_grid:
+		flora_sim.step_simulation(delta_sim, _env_grid)
+		
+	# Step fauna foraging, metabolism, movement, and predation
+	if fauna_sim:
+		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func)
+		
+	var duration_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
+	metrics.last_sim_step_duration_ms = duration_ms
+	metrics.sample_history()
+	
+	if _event_bus:
+		_event_bus.publish("ecosystem_metrics_updated", metrics.to_dict())
+
+## Player Interventions
+func apply_drought(moisture_target: float = 0.05) -> void:
+	if _weather_system:
+		_weather_system.set_state(WeatherSystem.WeatherState.DROUGHT, 60.0)
+	if _env_grid:
+		# Directly penalize moisture across all grid cells
+		for i: int in range(_env_grid.get_cell_count()):
+			var cell: Dictionary = _env_grid.get_cell(i)
+			if not cell.is_empty():
+				cell["moisture"] = minf(cell.get("moisture", 0.5), moisture_target)
+				
+	if _event_bus:
+		_event_bus.publish("player_intervention", {"action": "drought", "moisture_target": moisture_target})
+
+func apply_rain() -> void:
+	if _weather_system:
+		_weather_system.set_state(WeatherSystem.WeatherState.RAIN, 45.0)
+	if _event_bus:
+		_event_bus.publish("player_intervention", {"action": "rain"})
+
+func spawn_herbivore_at_center() -> int:
+	var pos: Vector3 = Vector3(_rng.randf_range(-5.0, 5.0), 0.0, _rng.randf_range(-5.0, 5.0))
+	if _terrain_height_func.is_valid():
+		pos.y = _terrain_height_func.call(pos.x, pos.z)
+	return fauna_sim.spawn_herbivore(pos, 85.0)
+
+func spawn_predator_at_center() -> int:
+	var pos: Vector3 = Vector3(_rng.randf_range(-15.0, 15.0), 0.0, _rng.randf_range(-15.0, 15.0))
+	if _terrain_height_func.is_valid():
+		pos.y = _terrain_height_func.call(pos.x, pos.z)
+	return fauna_sim.spawn_predator(pos, 85.0)
+
+func clear() -> void:
+	if flora_sim:
+		flora_sim.clear()
+	if fauna_sim:
+		fauna_sim.clear()
+	if metrics:
+		metrics.reset()
