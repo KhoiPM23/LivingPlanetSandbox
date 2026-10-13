@@ -442,3 +442,18 @@ es://presentation/ui/hud.gd):**
     6. `test_experiment_tools_modes_and_persistence`: Verifies all 11 tool modes, names, and lossless save/load persistence of fertilities and interventions.
   - Test runner: **74 Passed across 16 suites, 0 Failed**.
   - Release smoke test: **7/7 Passed**.
+
+### BLOCK 6 — Regression, Release, Tài liệu và Bàn giao (COMPLETED)
+- **Full Regression Verification:**
+  - Automated contract test runner (`tests/test_runner.gd`): **74/74 tests passed across all 16 test suites (0 failures)**.
+  - Release candidate smoke test (`tests/test_release_smoke.gd`): **7/7 smoke checks passed** verifying clean boot, world generation, camera limits, clock progression, tool interactions, save/load schema v2 roundtrip, and settings modal.
+- **Standalone Windows Release Compilation:**
+  - Compiled and exported Windows Desktop release package via Godot 4.6.3 headless CLI (`build/release/LivingPlanetSandbox.exe`).
+  - Embedded PCK package (127.3 MB) incorporating all scripts, shaders, assets, configurations, and licenses.
+- **Documentation & User Guides:**
+  - Updated `README.md` with complete documentation for all 5 feature blocks: camera modes, genetics and selection, weather and surface dynamics, graphics presets and telemetry, climate experiment tools and causal feedback.
+  - Updated `CURRENT_STATE.md` to reflect Block 6 final milestone with 100% verification pass rates.
+  - Updated `WORK_LOG.md` tracking all implementation and verification steps across the overnight orchestrator session.
+- **Deliverables & Handoff:**
+  - Clean working tree with zero uncommitted artifacts.
+  - Git repository synchronized with remote origin `main`.

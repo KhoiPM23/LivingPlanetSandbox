@@ -4,11 +4,12 @@
 ---
 
 ### 1. Phase Status
-- **Current Milestone:** Overnight Orchestration — BLOCK 5 Completed (Công cụ Thí nghiệm và Tích hợp Nhân quả).
+- **Current Milestone:** Overnight Orchestration — BLOCK 6 Completed (Regression, Release, Tài liệu và Bàn giao).
 - **Engine Version:** Godot Engine v4.6.3.stable.official.7d41c59c4 (Windows x86_64).
 - **Renderer:** Forward Plus (Vulkan 1.4.323 on Intel Iris Xe Graphics).
 - **Git Branch:** `main`.
 - **Remote Origin:** `https://github.com/KhoiPM23/LivingPlanetSandbox.git` (tracked).
+- **Standalone Release Executable:** `build/release/LivingPlanetSandbox.exe` (127.3 MB, embedded PCK, tested).
 
 ---
 
