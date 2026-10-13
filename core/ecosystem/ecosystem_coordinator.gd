@@ -7,10 +7,12 @@ extends RefCounted
 const FloraSimulation = preload("res://core/ecosystem/flora_simulation.gd")
 const FaunaSimulation = preload("res://core/ecosystem/fauna_simulation.gd")
 const EcosystemMetrics = preload("res://core/ecosystem/ecosystem_metrics.gd")
+const CausalTracker = preload("res://core/ecosystem/causal_tracker.gd")
 
 var flora_sim: FloraSimulation
 var fauna_sim: FaunaSimulation
 var metrics: EcosystemMetrics
+var causal_tracker: CausalTracker
 
 var _rng: RandomNumberGenerator
 var _world_seed: WorldSeed
@@ -43,8 +45,13 @@ func _init(
 
 	_rng = world_seed.get_stream("ecology") if world_seed != null else RandomNumberGenerator.new()
 	metrics = EcosystemMetrics.new()
+	causal_tracker = CausalTracker.new(world_clock)
 	flora_sim = FloraSimulation.new(_rng, entity_registry, metrics, event_bus)
 	fauna_sim = FaunaSimulation.new(_rng, entity_registry, metrics, event_bus)
+
+	if _event_bus:
+		_event_bus.subscribe("plant_died", Callable(self, "_on_plant_died_causal"))
+		_event_bus.subscribe("fauna_died", Callable(self, "_on_fauna_died_causal"))
 
 	if _scheduler:
 		# Run ecosystem simulation at 2Hz (every 5 ticks at 10Hz clock)
@@ -222,3 +229,30 @@ func clear() -> void:
 		fauna_sim.clear()
 	if metrics:
 		metrics.reset()
+	if causal_tracker:
+		causal_tracker.clear()
+
+func _on_plant_died_causal(payload: Variant) -> void:
+	if not causal_tracker or not (payload is Dictionary):
+		return
+	var dict: Dictionary = payload as Dictionary
+	var pid: int = dict.get("id", 0)
+	var reason: String = dict.get("reason", "decay")
+	var pos: Vector3 = dict.get("position", Vector3.ZERO)
+	var sim_t: float = _world_clock.simulation_time if _world_clock else 0.0
+	var event: Dictionary = causal_tracker.process_plant_death(pid, pos, reason, sim_t)
+	if not event.is_empty() and _event_bus:
+		_event_bus.publish("causal_cascade_observed", event)
+
+func _on_fauna_died_causal(payload: Variant) -> void:
+	if not causal_tracker or not (payload is Dictionary):
+		return
+	var dict: Dictionary = payload as Dictionary
+	var fid: int = dict.get("id", 0)
+	var reason: String = dict.get("reason", "natural")
+	var pos: Vector3 = dict.get("position", Vector3.ZERO)
+	var sim_t: float = _world_clock.simulation_time if _world_clock else 0.0
+	if reason == "starvation":
+		var event: Dictionary = causal_tracker.process_fauna_starvation(fid, pos, sim_t)
+		if not event.is_empty() and _event_bus:
+			_event_bus.publish("causal_cascade_observed", event)

@@ -155,7 +155,8 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 		if env_data.has("cell_moistures"):
 			environmental_grid.restore_cell_data(
 				env_data.get("cell_moistures", []),
-				env_data.get("cell_temperatures", [])
+				env_data.get("cell_temperatures", []),
+				env_data.get("cell_fertilities", [])
 			)
 
 	# 5. Restore ecosystem simulation (Schema v2)
@@ -174,6 +175,9 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 				ecosystem_coordinator.fauna_sim.restore_herbivore(h_data)
 			for p_data: Dictionary in eco_data.get("predators", []):
 				ecosystem_coordinator.fauna_sim.restore_predator(p_data)
+
+		if eco_data.has("causal_interventions") and ecosystem_coordinator.causal_tracker:
+			ecosystem_coordinator.causal_tracker.deserialize(eco_data["causal_interventions"])
 
 		if data.has("metrics") and ecosystem_coordinator.metrics:
 			var m_data: Dictionary = data["metrics"]

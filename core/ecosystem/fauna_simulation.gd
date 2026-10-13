@@ -157,6 +157,7 @@ func spawn_predator(pos: Vector3, initial_energy: float = 80.0, genome: Ecosyste
 func remove_herbivore(id: int, reason: String = "natural") -> void:
 	if not _herbivores.has(id):
 		return
+	var pos: Vector3 = _herbivores[id].position
 	_herbivores.erase(id)
 
 	if _entity_registry:
@@ -166,11 +167,12 @@ func remove_herbivore(id: int, reason: String = "natural") -> void:
 		_metrics.record_death("herbivore", reason)
 
 	if _event_bus:
-		_event_bus.publish("fauna_died", {"id": id, "type": "herbivore", "reason": reason})
+		_event_bus.publish("fauna_died", {"id": id, "type": "herbivore", "reason": reason, "position": pos})
 
 func remove_predator(id: int, reason: String = "natural") -> void:
 	if not _predators.has(id):
 		return
+	var pos: Vector3 = _predators[id].position
 	_predators.erase(id)
 
 	if _entity_registry:
@@ -180,7 +182,7 @@ func remove_predator(id: int, reason: String = "natural") -> void:
 		_metrics.record_death("predator", reason)
 
 	if _event_bus:
-		_event_bus.publish("fauna_died", {"id": id, "type": "predator", "reason": reason})
+		_event_bus.publish("fauna_died", {"id": id, "type": "predator", "reason": reason, "position": pos})
 
 func get_herbivore(id: int) -> HerbivoreData:
 	return _herbivores.get(id, null)

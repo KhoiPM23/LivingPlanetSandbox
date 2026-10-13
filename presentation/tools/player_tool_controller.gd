@@ -18,7 +18,11 @@ enum ToolMode {
 	SPAWN_PLANT = 4,
 	SPAWN_HERBIVORE = 5,
 	SPAWN_PREDATOR = 6,
-	DELETE_ENTITY = 7
+	DELETE_ENTITY = 7,
+	HEATWAVE = 8,
+	FROST = 9,
+	SOIL_FERTILIZE = 10,
+	DISASTER_SHOCK = 11
 }
 
 @export var camera_path: NodePath
@@ -94,6 +98,10 @@ func get_tool_name(mode: ToolMode) -> String:
 		ToolMode.SPAWN_HERBIVORE: return "+ Herbivore"
 		ToolMode.SPAWN_PREDATOR: return "+ Predator"
 		ToolMode.DELETE_ENTITY: return "Delete"
+		ToolMode.HEATWAVE: return "Heatwave (+8°C)"
+		ToolMode.FROST: return "Frost (-8°C)"
+		ToolMode.SOIL_FERTILIZE: return "Fertilize (Soil)"
+		ToolMode.DISASTER_SHOCK: return "Disaster Shock"
 		_: return "None"
 
 func set_brush_radius(radius: float) -> void:
@@ -120,6 +128,14 @@ func _update_tool_visual_style() -> void:
 			col = Color(1.0, 0.25, 0.35, 0.8)
 		ToolMode.DELETE_ENTITY:
 			col = Color(1.0, 0.15, 0.15, 0.85)
+		ToolMode.HEATWAVE:
+			col = Color(1.0, 0.45, 0.1, 0.85)
+		ToolMode.FROST:
+			col = Color(0.2, 0.88, 1.0, 0.85)
+		ToolMode.SOIL_FERTILIZE:
+			col = Color(0.1, 1.0, 0.4, 0.85)
+		ToolMode.DISASTER_SHOCK:
+			col = Color(0.95, 0.15, 0.35, 0.85)
 		_:
 			col = Color(0.5, 0.5, 0.5, 0.0)
 	_brush_material.albedo_color = col
@@ -186,6 +202,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_5: set_tool(ToolMode.SPAWN_HERBIVORE)
 			KEY_6: set_tool(ToolMode.SPAWN_PREDATOR)
 			KEY_7: set_tool(ToolMode.DELETE_ENTITY)
+			KEY_8: set_tool(ToolMode.HEATWAVE)
+			KEY_9: set_tool(ToolMode.FROST)
+			KEY_0: set_tool(ToolMode.SOIL_FERTILIZE)
+			KEY_MINUS: set_tool(ToolMode.DISASTER_SHOCK)
 			KEY_BRACKETLEFT:
 				set_brush_radius(brush_radius - 2.0)
 				action_feedback.emit("Brush radius: %.1fm" % brush_radius, true)
@@ -217,6 +237,14 @@ func execute_active_tool() -> void:
 			_execute_spawn_predator()
 		ToolMode.DELETE_ENTITY:
 			_execute_delete_entity()
+		ToolMode.HEATWAVE:
+			_execute_heatwave()
+		ToolMode.FROST:
+			_execute_frost()
+		ToolMode.SOIL_FERTILIZE:
+			_execute_fertilize()
+		ToolMode.DISASTER_SHOCK:
+			_execute_disaster_shock()
 
 func _execute_inspect() -> void:
 	var result: Dictionary = {
@@ -228,6 +256,8 @@ func _execute_inspect() -> void:
 	# 1. Sample Environment
 	if _bootstrap.environmental_grid:
 		var env: Dictionary = _bootstrap.environmental_grid.get_environment_at(_current_hit_point.x, _current_hit_point.z)
+		if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+			env["causal_status"] = _bootstrap.ecosystem_coordinator.causal_tracker.get_causal_status_at(_current_hit_point)
 		result["environment"] = env
 
 	# 2. Check for nearby fauna or flora entity
@@ -302,10 +332,109 @@ func _execute_moisture_brush(delta: float) -> void:
 		msg = "-Moisture (-20%%) across %d cells — Drought stress induced on vegetation." % affected
 	action_feedback.emit(msg, true)
 
+	if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+		var act: String = "moisture_add" if delta > 0.0 else "moisture_sub"
+		_bootstrap.ecosystem_coordinator.causal_tracker.record_intervention(act, _current_hit_point, brush_radius, {"delta": delta, "cells": affected})
+
 	if _bootstrap.world_event_bus:
 		_bootstrap.world_event_bus.publish("player_intervention", {
 			"action": "moisture_brush",
 			"delta": delta,
+			"pos": _current_hit_point,
+			"cells_affected": affected
+		})
+
+func _execute_heatwave() -> void:
+	if not _bootstrap.environmental_grid:
+		return
+	var affected: int = _bootstrap.environmental_grid.apply_temperature_brush(
+		_current_hit_point.x,
+		_current_hit_point.z,
+		brush_radius,
+		8.0
+	)
+	_spawn_tool_pulse(_current_hit_point, Color(1.0, 0.45, 0.1, 0.9), brush_radius)
+	var msg: String = "Heatwave (+8°C) across %d cells — Accelerates evaporation & heat stress." % affected
+	action_feedback.emit(msg, true)
+
+	if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+		_bootstrap.ecosystem_coordinator.causal_tracker.record_intervention("heatwave", _current_hit_point, brush_radius, {"delta_temp": 8.0, "cells": affected})
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "heatwave",
+			"delta": 8.0,
+			"pos": _current_hit_point,
+			"cells_affected": affected
+		})
+
+func _execute_frost() -> void:
+	if not _bootstrap.environmental_grid:
+		return
+	var affected: int = _bootstrap.environmental_grid.apply_temperature_brush(
+		_current_hit_point.x,
+		_current_hit_point.z,
+		brush_radius,
+		-8.0
+	)
+	_spawn_tool_pulse(_current_hit_point, Color(0.2, 0.88, 1.0, 0.9), brush_radius)
+	var msg: String = "Frost (-8°C) across %d cells — Slows metabolism & induces plant dormancy." % affected
+	action_feedback.emit(msg, true)
+
+	if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+		_bootstrap.ecosystem_coordinator.causal_tracker.record_intervention("frost", _current_hit_point, brush_radius, {"delta_temp": -8.0, "cells": affected})
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "frost",
+			"delta": -8.0,
+			"pos": _current_hit_point,
+			"cells_affected": affected
+		})
+
+func _execute_fertilize() -> void:
+	if not _bootstrap.environmental_grid:
+		return
+	var affected: int = _bootstrap.environmental_grid.apply_fertilizer_brush(
+		_current_hit_point.x,
+		_current_hit_point.z,
+		brush_radius,
+		1.5
+	)
+	_spawn_tool_pulse(_current_hit_point, Color(0.1, 1.0, 0.4, 0.9), brush_radius)
+	var msg: String = "Fertilized %d cells — Soil enriched 2.5x, boosting plant growth & seed spread." % affected
+	action_feedback.emit(msg, true)
+
+	if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+		_bootstrap.ecosystem_coordinator.causal_tracker.record_intervention("fertilize", _current_hit_point, brush_radius, {"delta_fertility": 1.5, "cells": affected})
+		_bootstrap.ecosystem_coordinator.causal_tracker.process_fertilizer_bloom(_current_hit_point, affected)
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "fertilize",
+			"delta": 1.5,
+			"pos": _current_hit_point,
+			"cells_affected": affected
+		})
+
+func _execute_disaster_shock() -> void:
+	if not _bootstrap.environmental_grid:
+		return
+	var affected: int = _bootstrap.environmental_grid.apply_disaster_shock(
+		_current_hit_point.x,
+		_current_hit_point.z,
+		brush_radius
+	)
+	_spawn_tool_pulse(_current_hit_point, Color(0.95, 0.15, 0.35, 0.95), brush_radius * 1.2)
+	var msg: String = "Disaster Shock across %d cells — Extreme heat (+12°C) & desiccation (-45%% moisture)!" % affected
+	action_feedback.emit(msg, true)
+
+	if _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.causal_tracker:
+		_bootstrap.ecosystem_coordinator.causal_tracker.record_intervention("disaster_shock", _current_hit_point, brush_radius, {"cells": affected})
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "disaster_shock",
 			"pos": _current_hit_point,
 			"cells_affected": affected
 		})
@@ -414,7 +543,8 @@ func _find_closest_entity(pos: Vector3, max_dist: float) -> Dictionary:
 					"energy": h.energy,
 					"age": h.age,
 					"state_name": _get_herbivore_state_name(h.state),
-					"life_stage_name": _get_life_stage_name(h.life_stage)
+					"life_stage_name": _get_life_stage_name(h.life_stage),
+					"genome": h.genome.serialize() if h.genome else {}
 				}
 
 		# Check Predators
@@ -431,7 +561,8 @@ func _find_closest_entity(pos: Vector3, max_dist: float) -> Dictionary:
 					"energy": p.energy,
 					"age": p.age,
 					"state_name": _get_predator_state_name(p.state),
-					"life_stage_name": _get_life_stage_name(p.life_stage)
+					"life_stage_name": _get_life_stage_name(p.life_stage),
+					"genome": p.genome.serialize() if p.genome else {}
 				}
 
 	# Check Plants
@@ -449,7 +580,8 @@ func _find_closest_entity(pos: Vector3, max_dist: float) -> Dictionary:
 					"biomass": pl.biomass,
 					"max_biomass": pl.max_biomass,
 					"age": pl.age,
-					"stage_name": _get_growth_stage_name(pl.stage)
+					"stage_name": _get_growth_stage_name(pl.stage),
+					"genome": pl.genome.serialize() if pl.genome else {}
 				}
 
 	return best_data

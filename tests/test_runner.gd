@@ -35,6 +35,7 @@ func run_all_tests() -> void:
 	_run_suite("TestGeneticsAndSelection", preload("res://tests/test_genetics_and_selection.gd").new())
 	_run_suite("TestWeatherAndSurface", preload("res://tests/test_weather_and_surface.gd").new())
 	_run_suite("TestGraphicsAndEvolutionTelemetry", preload("res://tests/test_graphics_and_evolution_telemetry.gd").new())
+	_run_suite("TestCausalExperimentTools", preload("res://tests/test_causal_experiment_tools.gd").new())
 
 
 

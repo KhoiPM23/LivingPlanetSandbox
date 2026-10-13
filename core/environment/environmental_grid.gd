@@ -62,9 +62,11 @@ func initialize_grid(height_sampler: Callable, moisture_noise: FastNoiseLite = n
 				"elevation": elev,
 				"temperature": initial_temp,
 				"base_temperature": initial_temp,
+				"temp_modifier": 0.0,
 				"moisture": initial_moisture,
 				"water_availability": water_avail,
 				"sun_exposure": 0.8,
+				"fertility": 1.0,
 				"biome": biome
 			}
 			
@@ -85,8 +87,11 @@ func step_simulation(delta_time: float, day_phase: float, weather: WeatherSystem
 		
 		# 1. Update Temperature
 		var base_t: float = cell["base_temperature"]
-		var current_t: float = base_t + diurnal_temp_shift + weather_temp_offset
+		var temp_mod: float = cell.get("temp_modifier", 0.0)
+		var current_t: float = base_t + diurnal_temp_shift + weather_temp_offset + temp_mod
 		cell["temperature"] = clamp(current_t, -25.0, 50.0)
+		if absf(temp_mod) > 0.01:
+			cell["temp_modifier"] = move_toward(temp_mod, 0.0, 0.10 * delta_time)
 		
 		# 2. Update Moisture & Water Availability
 		if elev <= _config.water_level:
@@ -107,8 +112,15 @@ func step_simulation(delta_time: float, day_phase: float, weather: WeatherSystem
 			
 		# 3. Update Sun Exposure
 		cell["sun_exposure"] = clamp(sun_factor * max(0.0, sin(diurnal_angle)), 0.0, 1.0)
+
+		# 4. Fertility relaxation toward equilibrium
+		var fert: float = cell.get("fertility", 1.0)
+		if fert > 1.0:
+			cell["fertility"] = move_toward(fert, 1.0, 0.02 * delta_time)
+		elif fert < 1.0:
+			cell["fertility"] = move_toward(fert, 1.0, 0.01 * delta_time)
 		
-		# 4. Re-classify Biome based on current state
+		# 5. Re-classify Biome based on current state
 		cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], elev, _config.water_level)
 
 func sample_at(world_x: float, world_z: float) -> Dictionary:
@@ -136,6 +148,7 @@ func get_environment_at(world_x: float, world_z: float) -> Dictionary:
 		"moisture": _config.base_moisture,
 		"water_availability": 0.5,
 		"sun_exposure": 1.0,
+		"fertility": 1.0,
 		"biome": BiomeClassifier.BiomeType.TEMPERATE_MEADOW,
 		"biome_name": "Temperate Meadow",
 		"elevation": 0.0
@@ -165,13 +178,72 @@ func apply_moisture_brush(center_x: float, center_z: float, radius: float, delta
 			affected_count += 1
 	return affected_count
 
-## Restores cell moistures and temperatures from persisted save data
-func restore_cell_data(moistures: Array, temps: Array = []) -> void:
+## Targeted temperature intervention: modifies heat or cold in a bounded radius
+func apply_temperature_brush(center_x: float, center_z: float, radius: float, delta_temp: float) -> int:
+	var radius_sq: float = radius * radius
+	var affected_count: int = 0
+	for i in range(_cells.size()):
+		var cell: Dictionary = _cells[i]
+		var dx: float = cell["world_x"] - center_x
+		var dz: float = cell["world_z"] - center_z
+		var dist_sq: float = dx * dx + dz * dz
+		if dist_sq <= radius_sq:
+			var falloff: float = 1.0 - (sqrt(dist_sq) / maxf(radius, 0.001))
+			var effective_delta: float = delta_temp * (0.5 + 0.5 * falloff)
+			var current_mod: float = cell.get("temp_modifier", 0.0)
+			cell["temp_modifier"] = clampf(current_mod + effective_delta, -35.0, 35.0)
+			cell["temperature"] = clampf(cell["temperature"] + effective_delta, -25.0, 50.0)
+			cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
+			affected_count += 1
+	return affected_count
+
+## Targeted soil fertilizer intervention: enriches nutrients in a bounded radius
+func apply_fertilizer_brush(center_x: float, center_z: float, radius: float, delta_fertility: float) -> int:
+	var radius_sq: float = radius * radius
+	var affected_count: int = 0
+	for i in range(_cells.size()):
+		var cell: Dictionary = _cells[i]
+		var dx: float = cell["world_x"] - center_x
+		var dz: float = cell["world_z"] - center_z
+		var dist_sq: float = dx * dx + dz * dz
+		if dist_sq <= radius_sq:
+			var falloff: float = 1.0 - (sqrt(dist_sq) / maxf(radius, 0.001))
+			var effective_delta: float = delta_fertility * (0.6 + 0.4 * falloff)
+			var cur_fert: float = cell.get("fertility", 1.0)
+			cell["fertility"] = clampf(cur_fert + effective_delta, 0.2, 3.0)
+			affected_count += 1
+	return affected_count
+
+## Localized disaster shock: sudden extreme heat spike (+12°C) combined with severe desiccation (-45% moisture)
+func apply_disaster_shock(center_x: float, center_z: float, radius: float) -> int:
+	var radius_sq: float = radius * radius
+	var affected_count: int = 0
+	for i in range(_cells.size()):
+		var cell: Dictionary = _cells[i]
+		var dx: float = cell["world_x"] - center_x
+		var dz: float = cell["world_z"] - center_z
+		var dist_sq: float = dx * dx + dz * dz
+		if dist_sq <= radius_sq:
+			var falloff: float = 1.0 - (sqrt(dist_sq) / maxf(radius, 0.001))
+			var heat_delta: float = 12.0 * (0.5 + 0.5 * falloff)
+			var moisture_drop: float = 0.45 * (0.5 + 0.5 * falloff)
+			var cur_mod: float = cell.get("temp_modifier", 0.0)
+			cell["temp_modifier"] = clampf(cur_mod + heat_delta, -35.0, 35.0)
+			cell["temperature"] = clampf(cell["temperature"] + heat_delta, -25.0, 50.0)
+			cell["moisture"] = clampf(cell["moisture"] - moisture_drop, 0.05, 1.0)
+			cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
+			affected_count += 1
+	return affected_count
+
+## Restores cell moistures, temperatures, and fertilities from persisted save data
+func restore_cell_data(moistures: Array, temps: Array = [], fertilities: Array = []) -> void:
 	var count: int = mini(_cells.size(), moistures.size())
 	for i in range(count):
 		var cell: Dictionary = _cells[i]
 		cell["moisture"] = clampf(float(moistures[i]), 0.05, 1.0)
 		if i < temps.size():
 			cell["temperature"] = clampf(float(temps[i]), -25.0, 50.0)
+		if i < fertilities.size():
+			cell["fertility"] = clampf(float(fertilities[i]), 0.2, 3.0)
 		cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
 

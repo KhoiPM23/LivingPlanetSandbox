@@ -116,6 +116,7 @@ func _connect_signals() -> void:
 		bus.subscribe("plant_died", Callable(self, "_on_sim_event").bind("DECAY"))
 		bus.subscribe("player_intervention", Callable(self, "_on_sim_event").bind("TOOL"))
 		bus.subscribe("weather_changed", Callable(self, "_on_sim_event").bind("WEATHER"))
+		bus.subscribe("causal_cascade_observed", Callable(self, "_on_causal_cascade"))
 
 	if _camera is FreeLookCamera:
 		var cam: FreeLookCamera = _camera as FreeLookCamera
@@ -284,7 +285,7 @@ func _build_left_toolbar() -> void:
 	_toolbar_panel.offset_left = 12.0
 	_toolbar_panel.offset_top = 58.0
 	_toolbar_panel.offset_right = 145.0
-	_toolbar_panel.offset_bottom = 328.0
+	_toolbar_panel.offset_bottom = 450.0
 
 	var style: StyleBoxFlat = _create_glass_style(Color(0.05, 0.08, 0.13, 0.88), Color(0.22, 0.42, 0.62, 0.6), 6)
 	_toolbar_panel.add_theme_stylebox_override("panel", style)
@@ -306,7 +307,11 @@ func _build_left_toolbar() -> void:
 		{"mode": PlayerToolController.ToolMode.SPAWN_PLANT, "label": "[4] +Plant"},
 		{"mode": PlayerToolController.ToolMode.SPAWN_HERBIVORE, "label": "[5] +Deer"},
 		{"mode": PlayerToolController.ToolMode.SPAWN_PREDATOR, "label": "[6] +Stalker"},
-		{"mode": PlayerToolController.ToolMode.DELETE_ENTITY, "label": "[7] Delete"}
+		{"mode": PlayerToolController.ToolMode.DELETE_ENTITY, "label": "[7] Delete"},
+		{"mode": PlayerToolController.ToolMode.HEATWAVE, "label": "[8] Heatwave"},
+		{"mode": PlayerToolController.ToolMode.FROST, "label": "[9] Frost"},
+		{"mode": PlayerToolController.ToolMode.SOIL_FERTILIZE, "label": "[0] Fertilize"},
+		{"mode": PlayerToolController.ToolMode.DISASTER_SHOCK, "label": "[-] Disaster"}
 	]
 
 	for t in tools_def:
@@ -657,7 +662,7 @@ func _build_menu_modal() -> void:
 • [E / Q]: Ascend / Descend elevation
 • [Shift]: Sprint speed boost | [Scroll Wheel]: Adjust flight speed
 • [Right Mouse]: Toggle free-look mouse camera
-• [1 - 7]: Select experiment tools (Inspect, +Moisture, -Moisture, Plant, Deer, Stalker, Delete)
+• [1 - 7, 8, 9, 0, -]: Select experiment tools (Inspect, +Moisture, -Moisture, Plant, Deer, Stalker, Delete, Heatwave, Frost, Fertilize, Disaster)
 • [[ / ]]: Decrease / Increase tool brush radius
 • [Left Mouse]: Apply selected tool at crosshair/cursor position
 • [Space]: Pause / Resume simulation clock
@@ -1004,6 +1009,10 @@ func _on_inspection_performed(data: Dictionary) -> void:
 		txt += "Moisture:    %.0f%%\n" % (env.get("moisture", 0.5) * 100.0)
 		txt += "Water Avail: %.2f\n" % env.get("water_availability", 0.5)
 		txt += "Sun Exposure:%.0f%%\n" % (env.get("sun_exposure", 1.0) * 100.0)
+		if env.has("fertility"):
+			txt += "Fertility:   %.1fx\n" % env.get("fertility", 1.0)
+		if env.has("causal_status"):
+			txt += "Causal Status: %s\n" % env.get("causal_status", "Natural equilibrium")
 
 	_inspect_details.text = txt
 	if _last_inspected_id > 0 and _track_entity_btn:
@@ -1027,6 +1036,15 @@ func _on_sim_event(payload: Variant, category: String) -> void:
 
 func _on_event_bus_notification(category: String, message: String) -> void:
 	log_event(category, message)
+
+func _on_causal_cascade(payload: Variant) -> void:
+	if not (payload is Dictionary):
+		return
+	var evt: Dictionary = payload as Dictionary
+	var headline: String = evt.get("headline", "Causal event detected")
+	var narrative: String = evt.get("narrative", "")
+	log_event("CAUSE & EFFECT", "%s: %s" % [headline, narrative])
+	show_toast("⚡ " + headline, true)
 
 func log_event(category: String, desc: String) -> void:
 	var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null

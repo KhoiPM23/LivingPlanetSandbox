@@ -406,3 +406,39 @@ es://presentation/ui/hud.gd):**
     5. 	est_iris_xe_balanced_workload_bounds: Verifies Iris Xe optimized preset hardware bounds.
   - Test runner: **68 Passed across 15 suites, 0 Failed**.
   - Release smoke test: **7/7 Passed**.
+
+### BLOCK 5 — Công cụ Thí nghiệm và Tích hợp Nhân quả (COMPLETED)
+- **Climate Experiment Tools (`res://presentation/tools/player_tool_controller.gd`):**
+  - Expanded `PlayerToolController` to 11 full simulation tools:
+    1. `HEATWAVE` (`[8]`): Induces acute regional thermal spike (+8.0°C brush) with vibrant amber torus pulse (`Color(1.0, 0.45, 0.1)`). Accelerates surface evaporation and induces heat stress.
+    2. `FROST` (`[9]`): Regional temperature cooling (-8.0°C brush) with icy cyan visual ring (`Color(0.2, 0.88, 1.0)`). Suppresses photosynthesis and induces cold dormancy / frost necrosis.
+    3. `SOIL_FERTILIZE` (`[0]`): Nutrient fertilizer bloom (+1.5 fertility boost, up to 2.5x - 3.0x max) with vivid emerald ring (`Color(0.1, 1.0, 0.4)`). Accelerates biomass accumulation by 2.5x and enhances seed dispersal distance.
+    4. `DISASTER_SHOCK` (`[-]`): Sudden environmental catastrophe tool applying localized thermal surge (+12.0°C) and severe soil desiccation (-45% moisture) with crimson indicator (`Color(0.95, 0.15, 0.35)`). Creates targeted ecological crises to test natural selection pressure.
+- **Environmental State Grid Dynamics (`res://core/environment/environmental_grid.gd`):**
+  - Each cell tracks discrete `temp_modifier` and `fertility` (default 1.0).
+  - Implemented `apply_temperature_brush`, `apply_fertilizer_brush`, and `apply_disaster_shock` with radial distance falloff.
+  - Implemented natural relaxation during `step_simulation`: temporary thermal modifiers decay at 0.10°C/s toward base equilibrium; enriched fertility gradually depletes back toward 1.0.
+  - Backwards-compatible save restoration supporting optional `cell_fertilities`.
+- **Thermal Extremes & Stress Reaction in Flora (`res://core/ecosystem/flora_simulation.gd`):**
+  - Growth equation coupled with `fertility`: $G = \text{base} \times M_{\text{moist}} \times S_{\text{sun}} \times T_{\text{temp}} \times \text{fertility} \times \Delta t$.
+  - Thermal extremes stress: temperatures $> 38.0^\circ\text{C}$ trigger heat stress decay; temperatures $< -2.0^\circ\text{C}$ trigger frost necrosis.
+  - Granular mortality classification: plants distinguish `"heatwave"`, `"frost"`, `"drought"`, and `"decay"`.
+- **Causal Correlation & Explanations (`res://core/ecosystem/causal_tracker.gd`):**
+  - Designed `CausalTracker` recording rolling history of player interventions with coordinates, timestamps, and radius.
+  - Spatial-temporal correlation detects downstream ecological cascades (plant withering, nutrient blooms, herbivore starvation).
+  - Emits `causal_cascade_detected` signal and publishes `causal_cascade_observed` on `WorldEventBus`.
+  - Cell inspector displays real-time causal impact (e.g. `"Heatwave stress (+8°C, 14s ago) — accelerated transpiration"` or `"Fertilized soil (2.5x, 22s ago) — accelerated biomass growth"`).
+- **HUD Integration (`res://presentation/ui/hud.gd`):**
+  - Left tool palette expanded to 11 buttons (`[1]` to `[-]`) with adjusted glassmorphic container bounds.
+  - Event log and banner toasts subscribe to `causal_cascade_observed`, surfacing high-visibility `[CAUSE & EFFECT]` headlines.
+  - Inspector card exposes cell fertility and causal state; entity inspector includes deserialized genome alleles and lineage.
+- **Testing & Verification:**
+  - Created `tests/test_causal_experiment_tools.gd` with 6 contract tests:
+    1. `test_climate_brushes_temperature_and_fertility`: Verifies heatwave, frost, fertilizer brushes, bounds, and relaxation.
+    2. `test_disaster_shock_impact`: Verifies combined thermal spike and desiccation.
+    3. `test_causal_tracker_interventions_and_queries`: Verifies proximity query, age filtering, and explanation strings.
+    4. `test_causal_cascade_generation_on_mortality`: Correlates plant drought death and herbivore starvation with player actions.
+    5. `test_fertilizer_growth_acceleration`: Validates accelerated biomass accumulation in enriched soil.
+    6. `test_experiment_tools_modes_and_persistence`: Verifies all 11 tool modes, names, and lossless save/load persistence of fertilities and interventions.
+  - Test runner: **74 Passed across 16 suites, 0 Failed**.
+  - Release smoke test: **7/7 Passed**.

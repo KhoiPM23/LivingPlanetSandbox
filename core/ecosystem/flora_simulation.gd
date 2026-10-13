@@ -109,6 +109,7 @@ func remove_plant(id: int, reason: String = "decay") -> void:
 	if not _plants.has(id):
 		return
 	var plant: PlantData = _plants[id]
+	var pos: Vector3 = plant.position
 	_remove_from_spatial_grid(id, plant.position)
 	_plants.erase(id)
 
@@ -119,7 +120,7 @@ func remove_plant(id: int, reason: String = "decay") -> void:
 		_metrics.record_death("plant", reason)
 
 	if _event_bus:
-		_event_bus.publish("plant_died", {"id": id, "reason": reason})
+		_event_bus.publish("plant_died", {"id": id, "reason": reason, "position": pos})
 
 func get_plant(id: int) -> PlantData:
 	return _plants.get(id, null)
@@ -196,12 +197,13 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 		var temp: float = env.get("temperature", 20.0)
 		var moisture: float = env.get("moisture", 0.6)
 		var sun: float = env.get("sun_exposure", 0.8)
+		var fertility: float = env.get("fertility", 1.0)
 
 		total_moisture_sum += moisture
 
 		# 1. Environmental Causal Impact
 		if moisture >= p.min_moisture:
-			# Sufficient moisture: Growth favored by warmth and sunlight
+			# Sufficient moisture: Growth favored by warmth, sunlight, and soil fertility
 			var moisture_mult: float = clampf(moisture / 0.6, 0.4, 1.8)
 			var sun_mult: float = clampf(sun / 0.7, 0.2, 1.4)
 			var temp_mult: float = 0.2
@@ -210,9 +212,17 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 			elif temp < 0.0:
 				temp_mult = 0.0 # Dormant in freeze
 
-			var growth: float = p.base_growth_rate * moisture_mult * sun_mult * temp_mult * delta
+			var growth: float = p.base_growth_rate * moisture_mult * sun_mult * temp_mult * fertility * delta
 			p.biomass = minf(p.max_biomass, p.biomass + growth)
-			p.health = minf(100.0, p.health + 2.5 * delta)
+			p.health = minf(100.0, p.health + 2.5 * fertility * delta)
+
+			# Thermal extremes stress
+			if temp > 38.0:
+				var heat_stress: float = (temp - 38.0) * 1.5 * delta
+				p.health = maxf(0.0, p.health - heat_stress)
+			elif temp < -2.0:
+				var frost_stress: float = (-2.0 - temp) * 1.2 * delta
+				p.health = maxf(0.0, p.health - frost_stress)
 		else:
 			# DROUGHT STRESS: Moisture deficit leads to biomass loss and health decay
 			var deficit: float = (p.min_moisture - moisture) / maxf(p.min_moisture, 0.01)
@@ -228,7 +238,13 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 		# Update Growth Stage
 		if p.health <= 0.0:
 			p.stage = GrowthStage.DEAD
-			var cause: String = "drought" if moisture < p.min_moisture else "decay"
+			var cause: String = "decay"
+			if moisture < p.min_moisture:
+				cause = "drought"
+			elif temp > 38.0:
+				cause = "heatwave"
+			elif temp < -2.0:
+				cause = "frost"
 			ids_to_remove.append({"id": id, "reason": cause})
 			continue
 		elif p.health < 35.0 or p.age > p.max_age * 0.85:
@@ -245,7 +261,7 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 		# 2. Reproduction / Spreading (Only mature, healthy plants in good soil)
 		if p.stage == GrowthStage.MATURE and p.health >= 70.0 and p.spread_cooldown <= 0.0 and _plants.size() < 180:
 			var spread_angle: float = _rng.randf() * TAU
-			var max_dist: float = p.genome.seed_spread_radius if p.genome else 7.5
+			var max_dist: float = (p.genome.seed_spread_radius if p.genome else 7.5) * (1.25 if fertility > 1.2 else 1.0)
 			var spread_dist: float = _rng.randf_range(3.0, max_dist)
 			var target_pos: Vector3 = p.position + Vector3(cos(spread_angle) * spread_dist, 0.0, sin(spread_angle) * spread_dist)
 

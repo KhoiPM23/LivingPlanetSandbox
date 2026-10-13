@@ -63,16 +63,18 @@ static func save_complete_world(
 
 		var cell_moistures: Array[float] = []
 		var cell_temps: Array[float] = []
+		var cell_fertilities: Array[float] = []
 		for i in range(grid.get_cell_count()):
 			var cell: Dictionary = grid.get_cell(i)
 			cell_moistures.append(float(cell.get("moisture", 0.5)))
 			cell_temps.append(float(cell.get("temperature", 20.0)))
-
+			cell_fertilities.append(float(cell.get("fertility", 1.0)))
 
 		payload["environment"] = {
 			"grid_size": grid.grid_size,
 			"cell_moistures": cell_moistures,
-			"cell_temperatures": cell_temps
+			"cell_temperatures": cell_temps,
+			"cell_fertilities": cell_fertilities
 		}
 
 	# 2. Weather System
@@ -141,6 +143,9 @@ static func save_complete_world(
 				"deaths_total": coordinator.metrics.deaths_total,
 				"deaths_by_cause": coordinator.metrics.deaths_by_cause.duplicate()
 			}
+
+		if coordinator.causal_tracker:
+			payload["ecosystem"]["causal_interventions"] = coordinator.causal_tracker.serialize()
 
 	# 4. Entity Registry (backward compatible + general props)
 	if registry:
