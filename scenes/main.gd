@@ -20,31 +20,39 @@ func _ready() -> void:
 	var config: WorldGenerationConfig = bootstrap.world_config if bootstrap else null
 	var grid: EnvironmentalGrid = bootstrap.environmental_grid if bootstrap else null
 	var weather: WeatherSystem = bootstrap.weather_system if bootstrap else null
-	
+
 	# 1. Generate Procedural Island Terrain bound to EnvironmentalGrid
 	if terrain:
 		terrain.generate_island(config if config != null else seed_val, grid)
 		print("[Main] Procedural island generated (size: %.0fm, max height: %.1fm)." % [terrain.island_size, terrain.max_height])
 		if grid:
 			print("[Main] Environmental grid initialized: %d cells (size: %.1fm)." % [grid.get_cell_count(), grid._cell_size])
-	
+
 	# 2. Setup Day/Night celestial cycle and Weather link
 	if day_night and bootstrap:
 		day_night.setup(bootstrap.world_clock, sun, env, weather)
 		print("[Main] Day/Night cycle bound to WorldClock and WeatherSystem.")
-		
+
 	# 3. Scatter flora, boulders, summit landmark, and instanced grass filtered by Biomes
 	if scatter and terrain:
 		scatter.scatter(terrain, seed_val, bootstrap.entity_registry, grid, config)
 		var entity_count: int = bootstrap.entity_registry.get_count() if (bootstrap and bootstrap.entity_registry) else 0
 		print("[Main] Biome props & foliage scattered. Tracked entities: %d" % entity_count)
 
+	# 3b. Setup Dynamic Weather Effects & Wind-Surface Reactions
+	var weather_fx: WeatherEffectsController = WeatherEffectsController.new()
+	weather_fx.name = "WeatherEffectsController"
+	add_child(weather_fx)
+	if weather and terrain:
+		weather_fx.setup(weather, terrain, water, scatter, camera, env, sun)
+		print("[Main] Weather effects & surface reaction simulation initialized.")
+
 	# 4. Initialize Causal Ecosystem Simulation & Presentation
 	var eco_presentation: EcosystemPresentation = null
 	if bootstrap and bootstrap.ecosystem_coordinator and terrain:
 		bootstrap.ecosystem_coordinator.bind_terrain_height(Callable(terrain, "get_height_at"))
 		bootstrap.ecosystem_coordinator.populate_initial_ecosystem(55, 14, 2)
-		
+
 		eco_presentation = EcosystemPresentation.new()
 		eco_presentation.name = "EcosystemPresentation"
 		add_child(eco_presentation)
@@ -54,7 +62,7 @@ func _ready() -> void:
 			bootstrap.ecosystem_coordinator.fauna_sim.get_herbivore_count(),
 			bootstrap.ecosystem_coordinator.fauna_sim.get_predator_count()
 		])
-		
+
 	# 5. Position camera overlooking the island from a scenic vantage point
 	if camera:
 		camera.position = Vector3(14.0, 10.5, 22.0)
@@ -66,7 +74,7 @@ func _ready() -> void:
 	tool_controller.name = "PlayerToolController"
 	add_child(tool_controller)
 	tool_controller.setup(camera, bootstrap, terrain)
-	
+
 	if hud:
 		hud.setup_controllers(bootstrap, tool_controller, camera)
 		print("[Main] Player experiment tools & observability HUD initialized.")

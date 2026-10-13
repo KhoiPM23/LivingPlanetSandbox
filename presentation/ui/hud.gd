@@ -71,6 +71,10 @@ var _track_entity_btn: Button
 var _last_inspected_id: int = -1
 var _last_inspected_pos: Vector3 = Vector3.ZERO
 
+# Weather & Wind Telemetry
+var _weather_btn: Button
+var _weather_telemetry_label: Label
+
 
 func _ready() -> void:
 	layer = 90
@@ -189,6 +193,20 @@ func _build_top_bar() -> void:
 	_bookmark_btn.custom_minimum_size = Vector2(75, 24)
 	_bookmark_btn.pressed.connect(_on_bookmark_btn_pressed)
 	hbox.add_child(_bookmark_btn)
+
+	# Weather State & Cycle Button
+	_weather_btn = Button.new()
+	_weather_btn.text = "☀️ Clear [Y]"
+	_weather_btn.custom_minimum_size = Vector2(105, 24)
+	_weather_btn.pressed.connect(_on_cycle_weather_pressed)
+	hbox.add_child(_weather_btn)
+
+	# Wind Vector & Ground Wetness Telemetry
+	_weather_telemetry_label = Label.new()
+	_weather_telemetry_label.text = "💨 -- 0.0m/s | 💧 0%"
+	_weather_telemetry_label.add_theme_color_override("font_color", Color(0.70, 0.88, 1.0))
+	_weather_telemetry_label.add_theme_font_size_override("font_size", 11)
+	hbox.add_child(_weather_telemetry_label)
 
 	hbox.add_child(_create_spacer())
 
@@ -802,6 +820,19 @@ func _process(delta: float) -> void:
 		if _cam_mode_btn:
 			_cam_mode_btn.text = "🎥 %s [V]" % cam.get_mode_name(cam.current_mode)
 
+	# Update Weather & Wind Telemetry
+	if weather and _weather_btn and _weather_telemetry_label:
+		_weather_btn.text = "%s %s [Y]" % [WeatherSystem.get_state_icon(weather.current_state), WeatherSystem.get_state_name(weather.current_state)]
+		var eff_wind: float = weather.get_effective_wind_speed()
+		var cardinal: String = weather.get_wind_cardinal()
+		var wet_pct: int = 0
+		var root_node: Node = get_tree().root if get_tree() else null
+		var main_node: Node = root_node.find_child("Main", true, false) if root_node else null
+		if main_node and main_node.has_node("IslandTerrain"):
+			var terrain: IslandTerrain = main_node.get_node("IslandTerrain") as IslandTerrain
+			wet_pct = int(terrain.get_surface_wetness() * 100.0)
+		_weather_telemetry_label.text = "💨 %s %.1fm/s | 💧 %d%%" % [cardinal, eff_wind, wet_pct]
+
 
 # =========================================================================
 # EVENT HANDLERS & CALLBACKS
@@ -1044,13 +1075,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				_on_quicksave_pressed()
 			KEY_F9:
 				_on_quickload_pressed()
-			KEY_T:
-				if _bootstrap and _bootstrap.weather_system:
-					var next_st: int = (int(_bootstrap.weather_system.current_state) + 1) % 4
-					_bootstrap.weather_system.set_state(next_st as WeatherSystem.WeatherState, 60.0)
-					show_toast("Weather changed to " + WeatherSystem.get_state_name(next_st as WeatherSystem.WeatherState), true)
+			KEY_T, KEY_Y:
+				_on_cycle_weather_pressed()
 			KEY_F:
 				_on_track_entity_pressed()
+
+func _on_cycle_weather_pressed() -> void:
+	if not _bootstrap or not _bootstrap.weather_system:
+		return
+	var weather: WeatherSystem = _bootstrap.weather_system
+	var next_st: int = (int(weather.current_state) + 1) % 4
+	weather.set_state(next_st as WeatherSystem.WeatherState, 60.0)
+	show_toast("Weather changed to: %s %s [Y]" % [WeatherSystem.get_state_icon(next_st as WeatherSystem.WeatherState), WeatherSystem.get_state_name(next_st as WeatherSystem.WeatherState)], true)
 
 func _on_camera_mode_btn_pressed() -> void:
 	if _camera is FreeLookCamera:

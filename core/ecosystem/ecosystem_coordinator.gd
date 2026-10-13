@@ -123,7 +123,7 @@ func step_simulation(delta_sim: float) -> void:
 
 	# Step fauna foraging, metabolism, movement, and predation
 	if fauna_sim:
-		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func)
+		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func, _weather_system)
 
 	# Compute live genetic telemetry
 	var total_herb_speed: float = 0.0

@@ -201,12 +201,22 @@ func get_all_predators() -> Array:
 	return _predators.values()
 
 ## Step simulation for all fauna: updates metabolism, AI decisions, foraging, and predator-prey dynamics
-func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Callable) -> void:
+func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Callable, weather: RefCounted = null) -> void:
 	var herbivore_deaths: Array[Dictionary] = []
 	var herbivore_births: Array = []
 	var predator_deaths: Array[Dictionary] = []
 	var predator_births: Array = []
 
+	var weather_speed_mult: float = 1.0
+	var weather_burn_mult: float = 1.0
+	if weather:
+		var w_state: int = int(weather.get("current_state"))
+		if w_state == 2: # WeatherState.RAIN
+			weather_speed_mult = 0.82 # 18% slower movement through wet mud/rain
+			weather_burn_mult = 1.10 # rain chill increased metabolic demand
+		elif w_state == 3: # WeatherState.DROUGHT
+			weather_speed_mult = 0.95
+			weather_burn_mult = 1.15 # heat/thirst dehydration
 
 	var total_herb_energy: float = 0.0
 	var total_herb_health: float = 0.0
@@ -229,11 +239,11 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 		else:
 			h.life_stage = LifeStage.JUVENILE
 
-		# Metabolism (energy drain based on genome trade-off)
-		var burn_mult: float = h.genome.get_metabolic_burn_multiplier() if h.genome else 1.0
+		# Metabolism (energy drain based on genome trade-off and weather chill)
+		var burn_mult: float = (h.genome.get_metabolic_burn_multiplier() if h.genome else 1.0) * weather_burn_mult
 		var metabolic_drain: float = 1.0 * delta * burn_mult
 		if h.velocity.length_squared() > 0.1:
-			metabolic_drain += 0.5 * delta * (h.genome.speed_mult if h.genome else 1.0)
+			metabolic_drain += 0.5 * delta * (h.genome.speed_mult if h.genome else 1.0) * weather_burn_mult
 		h.energy = maxf(0.0, h.energy - metabolic_drain)
 
 		# Starvation damage
@@ -267,7 +277,7 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 				flee_dir = Vector3(cos(h.heading), 0.0, sin(h.heading))
 			else:
 				flee_dir = flee_dir.normalized()
-			h.velocity = flee_dir * (h.move_speed * 1.25)
+			h.velocity = flee_dir * (h.move_speed * 1.25 * weather_speed_mult)
 			_move_animal(h, delta, height_callable)
 		else:
 			# Not fleeing: AI behavior based on energy
@@ -305,15 +315,15 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 							h.energy = minf(100.0, h.energy + eaten * 12.0)
 							h.health = minf(100.0, h.health + 2.0 * delta)
 					else:
-						h.velocity = to_food.normalized() * h.move_speed
+						h.velocity = to_food.normalized() * (h.move_speed * weather_speed_mult)
 						_move_animal(h, delta, height_callable)
 				else:
 					# No food nearby: wander to find grazing grounds
-					_wander_animal(h, delta, height_callable)
+					_wander_animal(h, delta, height_callable, weather_speed_mult)
 			else:
 				# Full / Content: Wander peacefully or rest
 				h.state = HerbivoreState.WANDERING
-				_wander_animal(h, delta, height_callable)
+				_wander_animal(h, delta, height_callable, weather_speed_mult)
 
 		# Reproduction (Adult with high energy & health)
 		if h.life_stage == LifeStage.ADULT and h.energy >= 75.0 and h.health >= 70.0 and h.reproduce_cooldown <= 0.0:
@@ -389,14 +399,14 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 					p.eat_timer = 0.0
 					p.velocity = Vector3.ZERO
 				else:
-					p.velocity = to_prey.normalized() * p.move_speed
+					p.velocity = to_prey.normalized() * (p.move_speed * weather_speed_mult)
 					_move_animal(p, delta, height_callable)
 			else:
 				# No prey found: wander
-				_wander_animal(p, delta, height_callable)
+				_wander_animal(p, delta, height_callable, weather_speed_mult)
 		else:
 			p.state = PredatorState.WANDERING
-			_wander_animal(p, delta, height_callable)
+			_wander_animal(p, delta, height_callable, weather_speed_mult)
 
 		# Predator reproduction
 		if p.energy >= 85.0 and p.health >= 80.0 and p.reproduce_cooldown <= 0.0 and _predators.size() < 6:
@@ -472,10 +482,10 @@ func _move_animal(animal: AnimalBase, delta: float, height_callable: Callable) -
 	if animal.velocity.length_squared() > 0.1:
 		animal.heading = atan2(animal.velocity.z, animal.velocity.x)
 
-func _wander_animal(animal: AnimalBase, delta: float, height_callable: Callable) -> void:
+func _wander_animal(animal: AnimalBase, delta: float, height_callable: Callable, speed_mult: float = 1.0) -> void:
 	# Small random steering turn
 	animal.heading += _rng.randf_range(-0.4, 0.4)
-	animal.velocity = Vector3(cos(animal.heading), 0.0, sin(animal.heading)) * (animal.move_speed * 0.5)
+	animal.velocity = Vector3(cos(animal.heading), 0.0, sin(animal.heading)) * (animal.move_speed * 0.5 * speed_mult)
 	_move_animal(animal, delta, height_callable)
 
 func _find_nearest_predator(pos: Vector3, max_dist: float) -> PredatorData:
@@ -564,5 +574,3 @@ func clear() -> void:
 	_herbivores.clear()
 	_predators.clear()
 	_next_id = 1000
-
-

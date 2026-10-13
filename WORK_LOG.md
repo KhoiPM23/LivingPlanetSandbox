@@ -327,3 +327,50 @@
     5. `test_fauna_inheritance_and_speed_selection`: Validates heritable speed inheritance across generations and trait-driven metabolic burn.
   - Test runner: **58 Passed across 13 suites, 0 Failed**.
   - Release smoke test: **7/7 Passed**.
+
+### BLOCK 3 — Thời tiết, Gió và Phản ứng Bề mặt (COMPLETED)
+- **Wind Dynamics & Weather State Machine Extension (
+es://core/environment/weather_system.gd):**
+  - Integrated 2D horizontal wind vector model (wind_direction: Vector2, normalized XZ coordinates).
+  - Smooth dynamic steering between weather state target speeds:
+    - CLEAR: Gentle breeze (1.0 to 1.8 m/s), low gusts (variance 0.20).
+    - CLOUDY: Moderate wind (2.2 to 3.4 m/s), medium gusts (variance 0.40).
+    - RAIN: Strong storm wind (4.5 to 6.2 m/s), gale gusts (variance 0.75).
+    - DROUGHT: Hot dry wind (1.6 to 2.6 m/s), thermal drafts (variance 0.30).
+  - Deterministic harmonic gust turbulence: synthesizes oscillating gusts without external state leaks or non-deterministic RNG drift.
+  - Exposed live wind telemetry getters: get_wind_direction(), get_wind_speed(), get_wind_gust(), get_effective_wind_speed(), get_wind_velocity(), and 8-wind cardinal lookup (get_wind_cardinal()).
+  - Full backward-compatible dictionary serialization (	o_dict / rom_dict).
+- **Dynamic Foliage & Ocean Shaders (
+es://presentation/shaders/):**
+  - oliage_wind.gdshader: Upgraded to project vertex oscillation along the normalized 2D wind vector (wind_dir); added realistic vertical downward compression under intense wind bending; added wetness parameter modulating albedo and lowering surface roughness (0.60 to 0.22) for damp sheen.
+  - water.gdshader: Gerstner primary wave vectors dynamically follow live wind direction (wind_dir); secondary cross-swell waves maintain orthogonal sea chop; procedural rain ripples (
+ain_ripple_strength) add high-frequency normal perturbations across water during rain with zero texture overhead.
+- **Surface Wetness & Reactions (
+es://presentation/environment/island_terrain.gd):**
+  - Procedural island terrain tracks dynamic surface wetness (surface_wetness: float).
+  - Rain accumulates surface moisture sheen; drought bakes and evaporates standing water.
+  - Terrain material override dynamically modulates:
+    - Roughness drops from 0.85 (dry ground) to 0.28 (glossy wet mud/rock sheen).
+    - Specular highlights scale from 0.10 to 0.55.
+    - Damp surfaces darken by up to 20% albedo; drought state imparts sunbaked arid warmth.
+- **Precipitation & Atmosphere Controller (
+es://presentation/environment/weather_effects_controller.gd):**
+  - Created dedicated zero-cost controller coordinating:
+    - 420 lightweight GPUParticles3D rain streaks, unshaded alpha material, camera-following volume.
+    - Particle fall trajectory slants dynamically according to wind vector and effective speed.
+    - Smooth atmospheric fog transitions in WorldEnvironment: dense cool-gray mist during rain (0.012 density), warm golden haze during drought (0.003 density), clear horizons on sunny days (0.004 density).
+- **Fauna Behavioral Adaptation (core/ecosystem/fauna_simulation.gd):**
+  - Causal weather coupling: during RAIN, herbivore and predator locomotion speed dampens by 18% (0.82x) due to wet mud and rain chill; metabolic energy consumption increases by 1.10x; drought increases dehydration energy burn (1.15x).
+- **HUD Weather & Wind Telemetry (
+es://presentation/ui/hud.gd):**
+  - Top bar: Added live Weather cycle button ([Y] / [T]) showing weather icon and name (e.g., 🌧️ Gentle Rain [Y]).
+  - Live wind vector and terrain wetness readout: 💨 SW 5.2m/s | 💧 68%.
+- **Testing & Verification:**
+  - Created 	ests/test_weather_and_surface.gd with 5 contract tests:
+    1. 	est_weather_wind_vector_and_gusts: Validates normalized direction, cardinal lookup, target speeds, and harmonic gusts.
+    2. 	est_terrain_surface_wetness_reaction: Verifies rain wetness accumulation, roughness/specular transitions, and drought drying.
+    3. 	est_shader_wind_and_water_coupling: Verifies water wave amplitude scaling and rain ripple activation during storm.
+    4. 	est_fauna_weather_speed_modulation: Verifies locomotion speed dampening during stormy rain.
+    5. 	est_weather_persistence_roundtrip: Verifies lossless save/load persistence of weather, wind vector, and duration.
+  - Test runner: **63 Passed across 14 suites, 0 Failed**.
+  - Release smoke test: **7/7 Passed**.

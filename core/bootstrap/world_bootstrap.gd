@@ -29,7 +29,7 @@ func initialize_world(seed_value: Variant) -> void:
 	world_event_bus = WorldEventBus.new()
 	entity_registry = EntityRegistry.new(world_event_bus)
 	simulation_scheduler = SimulationScheduler.new(world_clock)
-	
+
 	world_config = WorldGenerationConfig.new(world_seed.master_seed)
 	weather_system = WeatherSystem.new(world_seed.get_stream("weather"), world_event_bus)
 	environmental_grid = EnvironmentalGrid.new(world_config)
@@ -42,10 +42,10 @@ func initialize_world(seed_value: Variant) -> void:
 		weather_system,
 		simulation_scheduler
 	)
-	
+
 	# Register recurring environmental grid simulation task (every 5 ticks = 0.5s at 10Hz)
 	simulation_scheduler.register_task("environment_tick", 5, Callable(self, "_on_environment_tick"))
-	
+
 	is_initialized = true
 	world_event_bus.notification_logged.emit("SYSTEM", "World initialized with seed: " + str(world_seed.master_seed))
 
@@ -56,10 +56,10 @@ func _process(delta: float) -> void:
 func _on_environment_tick(_tick_num: int, _sim_time: float) -> void:
 	if not world_clock or not environmental_grid or not weather_system:
 		return
-		
+
 	var delta_sim: float = 0.5 * world_clock.time_scale
 	weather_system.update(delta_sim)
-	
+
 	var day_phase: float = fmod((world_clock.simulation_time + 45.0) / 120.0, 1.0)
 	environmental_grid.step_simulation(delta_sim, day_phase, weather_system)
 
@@ -76,7 +76,7 @@ func reset_world(new_seed: Variant = null) -> void:
 	if simulation_scheduler and world_clock:
 		simulation_scheduler.bind_clock(world_clock)
 		simulation_scheduler.register_task("environment_tick", 5, Callable(self, "_on_environment_tick"))
-		
+
 	world_config = WorldGenerationConfig.new(world_seed.master_seed)
 	weather_system = WeatherSystem.new(world_seed.get_stream("weather"), world_event_bus)
 	environmental_grid = EnvironmentalGrid.new(world_config)
@@ -89,7 +89,7 @@ func reset_world(new_seed: Variant = null) -> void:
 		weather_system,
 		simulation_scheduler
 	)
-	
+
 	if world_event_bus:
 		world_event_bus.notification_logged.emit("SYSTEM", "World reset with seed: " + str(world_seed.master_seed))
 
@@ -120,27 +120,35 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 			world_event_bus.notification_logged.emit("ERROR", "Failed to load world (%s): %s" % [path, result.get("message", "")])
 			world_event_bus.publish("load_failed", {"path": path, "error": err, "message": result.get("message", "")})
 		return err
-		
+
 	var data: Dictionary = result.get("data", {})
-	
+
 	# 1. Restore seed & config
 	if data.has("seed") and data["seed"].has("master_seed"):
 		world_seed.set_master_seed(data["seed"]["master_seed"])
 		world_config = WorldGenerationConfig.new(world_seed.master_seed)
-		
+
 	# 2. Restore clock
 	if data.has("clock"):
 		world_clock.simulation_time = data["clock"].get("simulation_time", 0.0)
 		world_clock.tick_count = data["clock"].get("tick_count", 0)
 		world_clock.set_time_scale(data["clock"].get("time_scale", 1.0))
 		world_clock.set_paused(data["clock"].get("is_paused", false))
-		
+
 	# 3. Restore weather
 	if data.has("weather") and weather_system:
 		var st: int = data["weather"].get("current_state", 0)
 		var dur: float = data["weather"].get("duration_remaining", 60.0)
 		weather_system.set_state(st as WeatherSystem.WeatherState, dur)
-		
+		if data["weather"].has("wind_dir_x") and data["weather"].has("wind_dir_y"):
+			weather_system.wind_direction = Vector2(float(data["weather"].get("wind_dir_x", 1.0)), float(data["weather"].get("wind_dir_y", 0.0))).normalized()
+			weather_system.target_wind_direction = weather_system.wind_direction
+		if data["weather"].has("wind_speed"):
+			weather_system.wind_speed = float(data["weather"].get("wind_speed", 1.5))
+			weather_system.target_wind_speed = weather_system.wind_speed
+		if data["weather"].has("gust_intensity"):
+			weather_system.gust_intensity = float(data["weather"].get("gust_intensity", 0.25))
+
 	# 4. Restore environment grid
 	if data.has("environment") and environmental_grid:
 		var env_data: Dictionary = data["environment"]
@@ -149,24 +157,24 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 				env_data.get("cell_moistures", []),
 				env_data.get("cell_temperatures", [])
 			)
-			
+
 	# 5. Restore ecosystem simulation (Schema v2)
 	entity_registry.clear()
-	
+
 	if data.has("ecosystem") and ecosystem_coordinator:
 		var eco_data: Dictionary = data["ecosystem"]
 		if ecosystem_coordinator.flora_sim:
 			ecosystem_coordinator.flora_sim.clear()
 			for plant_data: Dictionary in eco_data.get("plants", []):
 				ecosystem_coordinator.flora_sim.restore_plant(plant_data)
-				
+
 		if ecosystem_coordinator.fauna_sim:
 			ecosystem_coordinator.fauna_sim.clear()
 			for h_data: Dictionary in eco_data.get("herbivores", []):
 				ecosystem_coordinator.fauna_sim.restore_herbivore(h_data)
 			for p_data: Dictionary in eco_data.get("predators", []):
 				ecosystem_coordinator.fauna_sim.restore_predator(p_data)
-				
+
 		if data.has("metrics") and ecosystem_coordinator.metrics:
 			var m_data: Dictionary = data["metrics"]
 			ecosystem_coordinator.metrics.births_total = m_data.get("births_total", 0)
@@ -187,6 +195,5 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 	if world_event_bus:
 		world_event_bus.notification_logged.emit("SYSTEM", "World state successfully loaded from: " + path)
 		world_event_bus.publish("load_completed", {"path": path})
-		
-	return OK
 
+	return OK

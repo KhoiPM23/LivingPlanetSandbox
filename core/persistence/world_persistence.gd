@@ -79,7 +79,11 @@ static func save_complete_world(
 	if weather:
 		payload["weather"] = {
 			"current_state": int(weather.current_state),
-			"duration_remaining": snapped(weather.duration_remaining, 0.1)
+			"duration_remaining": snapped(weather.duration_remaining, 0.1),
+			"wind_dir_x": snapped(weather.wind_direction.x, 0.01),
+			"wind_dir_y": snapped(weather.wind_direction.y, 0.01),
+			"wind_speed": snapped(weather.wind_speed, 0.1),
+			"gust_intensity": snapped(weather.gust_intensity, 0.01)
 		}
 
 	# 3. Ecosystem Coordinator (Flora & Fauna simulation instances)
