@@ -16,7 +16,14 @@ var average_herbivore_energy: float = 0.0 # 0.0 - 100.0%
 var average_herbivore_health: float = 0.0 # 0.0 - 100.0%
 var average_predator_energy: float = 0.0 # 0.0 - 100.0%
 
+# Genetic Telemetry
+var avg_herbivore_speed: float = 1.0
+var avg_herbivore_size: float = 1.0
+var avg_plant_drought_tolerance: float = 0.20
+var max_generation: int = 1
+
 var food_availability_ratio: float = 1.0 # Available biomass / herd demand
+
 
 # Cumulative event counters
 var births_total: int = 0
@@ -45,7 +52,11 @@ func sample_history() -> void:
 		"biomass": total_biomass,
 		"herbivores": herbivore_count,
 		"predators": predator_count,
-		"plants": plant_count
+		"plants": plant_count,
+		"avg_speed": avg_herbivore_speed,
+		"avg_size": avg_herbivore_size,
+		"drought_tol": avg_plant_drought_tolerance,
+		"max_gen": max_generation
 	})
 	if history.size() > MAX_HISTORY_SAMPLES:
 		history.pop_front()
@@ -77,6 +88,10 @@ func reset() -> void:
 	average_herbivore_energy = 0.0
 	average_herbivore_health = 0.0
 	average_predator_energy = 0.0
+	avg_herbivore_speed = 1.0
+	avg_herbivore_size = 1.0
+	avg_plant_drought_tolerance = 0.20
+	max_generation = 1
 	food_availability_ratio = 1.0
 	births_total = 0
 	births_by_type = {"plant": 0, "herbivore": 0, "predator": 0}
@@ -102,6 +117,10 @@ func to_dict() -> Dictionary:
 		"average_herbivore_energy": snapped(average_herbivore_energy, 0.1),
 		"average_herbivore_health": snapped(average_herbivore_health, 0.1),
 		"average_predator_energy": snapped(average_predator_energy, 0.1),
+		"avg_herbivore_speed": snapped(avg_herbivore_speed, 0.01),
+		"avg_herbivore_size": snapped(avg_herbivore_size, 0.01),
+		"avg_plant_drought_tolerance": snapped(avg_plant_drought_tolerance, 0.01),
+		"max_generation": max_generation,
 		"food_availability_ratio": snapped(food_availability_ratio, 0.01),
 		"births_total": births_total,
 		"births_by_type": births_by_type.duplicate(),

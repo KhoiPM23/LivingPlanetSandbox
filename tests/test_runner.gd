@@ -9,13 +9,13 @@ func _init() -> void:
 	print("\n=======================================================")
 	print("   LIVING PLANET SANDBOX — AUTOMATED CONTRACT TESTS   ")
 	print("=======================================================\n")
-	
+
 	run_all_tests()
-	
+
 	print("\n-------------------------------------------------------")
 	print("TEST RESULTS: Passed: %d | Failed: %d" % [_passed_count, _failed_count])
 	print("-------------------------------------------------------")
-	
+
 	var exit_code: int = 0 if _failed_count == 0 else 1
 	quit(exit_code)
 
@@ -32,6 +32,8 @@ func run_all_tests() -> void:
 	_run_suite("TestStabilityAndRegression", preload("res://tests/test_stability_and_regression.gd").new())
 	_run_suite("TestVisualPolishAndUX", preload("res://tests/test_visual_polish_and_ux.gd").new())
 	_run_suite("TestCameraExploration", preload("res://tests/test_camera_exploration.gd").new())
+	_run_suite("TestGeneticsAndSelection", preload("res://tests/test_genetics_and_selection.gd").new())
+
 
 
 func _run_suite(suite_name: String, suite: Object) -> void:
@@ -51,7 +53,7 @@ func try_run_test(suite: Object, method_name: String) -> void:
 		passed = true
 	elif result is String and (result as String).is_empty():
 		passed = true
-		
+
 	if passed:
 		_passed_count += 1
 		print("  [PASS] %s" % method_name)

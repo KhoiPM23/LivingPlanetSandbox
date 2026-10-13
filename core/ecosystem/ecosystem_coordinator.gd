@@ -40,12 +40,12 @@ func _init(
 	_env_grid = env_grid
 	_weather_system = weather_system
 	_scheduler = scheduler
-	
+
 	_rng = world_seed.get_stream("ecology") if world_seed != null else RandomNumberGenerator.new()
 	metrics = EcosystemMetrics.new()
 	flora_sim = FloraSimulation.new(_rng, entity_registry, metrics, event_bus)
 	fauna_sim = FaunaSimulation.new(_rng, entity_registry, metrics, event_bus)
-	
+
 	if _scheduler:
 		# Run ecosystem simulation at 2Hz (every 5 ticks at 10Hz clock)
 		_scheduler.register_task("ecosystem_tick", 5, Callable(self, "_on_ecosystem_tick"))
@@ -58,7 +58,7 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 	flora_sim.clear()
 	fauna_sim.clear()
 	metrics.reset()
-	
+
 	# 1. Spawn initial flora across habitable island cells
 	for i: int in range(plant_count):
 		var angle: float = _rng.randf() * TAU
@@ -68,13 +68,13 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 		var y: float = 0.5
 		if _terrain_height_func.is_valid():
 			y = _terrain_height_func.call(x, z)
-			
+
 		# Check above water level
 		if y > 0.4:
 			var species: String = "shrub_bush" if (_rng.randf() < 0.35) else "grass_patch"
 			var initial_bio: float = _rng.randf_range(2.0, 6.0)
 			flora_sim.spawn_plant(species, Vector3(x, y, z), initial_bio)
-			
+
 	# 2. Spawn initial herbivores in meadow/forest zones
 	for i: int in range(herbivore_count):
 		var angle: float = _rng.randf() * TAU
@@ -87,7 +87,7 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 		if y > 0.4:
 			var initial_energy: float = _rng.randf_range(70.0, 95.0)
 			fauna_sim.spawn_herbivore(Vector3(x, y, z), initial_energy)
-			
+
 	# 3. Spawn initial predators near higher elevation
 	for i: int in range(predator_count):
 		var angle: float = _rng.randf() * TAU
@@ -99,7 +99,7 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 			y = _terrain_height_func.call(x, z)
 		if y > 0.4:
 			fauna_sim.spawn_predator(Vector3(x, y, z), 85.0)
-			
+
 	if _event_bus:
 		_event_bus.publish("ecosystem_populated", {
 			"plants": flora_sim.get_plant_count(),
@@ -116,21 +116,46 @@ func _on_ecosystem_tick(_tick_num: int, _sim_time: float) -> void:
 
 func step_simulation(delta_sim: float) -> void:
 	var start_usec: int = Time.get_ticks_usec()
-	
+
 	# Step plant growth and environmental decay
 	if flora_sim and _env_grid:
 		flora_sim.step_simulation(delta_sim, _env_grid)
-		
+
 	# Step fauna foraging, metabolism, movement, and predation
 	if fauna_sim:
 		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func)
-		
+
+	# Compute live genetic telemetry
+	var total_herb_speed: float = 0.0
+	var total_herb_size: float = 0.0
+	var max_gen: int = 1
+	var herbs: Array = fauna_sim.get_all_herbivores() if fauna_sim else []
+	for h in herbs:
+		if h.genome:
+			total_herb_speed += h.genome.speed_mult
+			total_herb_size += h.genome.size_scale
+			max_gen = maxi(max_gen, h.genome.generation)
+	if herbs.size() > 0:
+		metrics.avg_herbivore_speed = total_herb_speed / float(herbs.size())
+		metrics.avg_herbivore_size = total_herb_size / float(herbs.size())
+
+	var total_drought_tol: float = 0.0
+	var plants: Array = flora_sim.get_all_plants() if flora_sim else []
+	for p in plants:
+		if p.genome:
+			total_drought_tol += p.genome.drought_tolerance
+			max_gen = maxi(max_gen, p.genome.generation)
+	if plants.size() > 0:
+		metrics.avg_plant_drought_tolerance = total_drought_tol / float(plants.size())
+	metrics.max_generation = max_gen
+
 	var duration_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
 	metrics.last_sim_step_duration_ms = duration_ms
 	metrics.sample_history()
-	
+
 	if _event_bus:
 		_event_bus.publish("ecosystem_metrics_updated", metrics.to_dict())
+
 
 ## Player Interventions
 func apply_drought(moisture_target: float = 0.05) -> void:
@@ -142,7 +167,7 @@ func apply_drought(moisture_target: float = 0.05) -> void:
 			var cell: Dictionary = _env_grid.get_cell(i)
 			if not cell.is_empty():
 				cell["moisture"] = minf(cell.get("moisture", 0.5), moisture_target)
-				
+
 	if _event_bus:
 		_event_bus.publish("player_intervention", {"action": "drought", "moisture_target": moisture_target})
 

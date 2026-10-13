@@ -776,18 +776,20 @@ func _process(delta: float) -> void:
 		var m: EcosystemMetrics = coord.metrics
 		var w_name: String = WeatherSystem.get_state_name(weather.current_state) if weather else "Clear"
 
-		_telemetry_label.text = "Weather: %s\nPlants: %d | Biomass: %.1f kg (%.0f%% HP)\nDeer: %d (%.0f%% En) | Stalkers: %d\nBirths: %d | Deaths: %d (Tick: %.2fms)" % [
+		_telemetry_label.text = "Weather: %s | Max Gen: %d\nPlants: %d | Biomass: %.1f kg (DroughtTol: %.0f%%)\nDeer: %d (Avg Spd: %.2fx) | Stalkers: %d\nBirths: %d | Deaths: %d (Tick: %.2fms)" % [
 			w_name,
+			m.max_generation,
 			m.plant_count,
 			m.total_biomass,
-			m.average_plant_health,
+			m.avg_plant_drought_tolerance * 100.0,
 			m.herbivore_count,
-			m.average_herbivore_energy,
+			m.avg_herbivore_speed,
 			m.predator_count,
 			m.births_total,
 			m.deaths_total,
 			m.last_sim_step_duration_ms
 		]
+
 
 		if _chart and m.history.size() > 0:
 			_chart.update_history(m.history)
@@ -915,7 +917,31 @@ func _on_inspection_performed(data: Dictionary) -> void:
 			_: state_desc = "Active in habitat"
 		txt += "Behavior:   %s\n -> %s\n\n" % [st_name, state_desc]
 
+		# Genome & Lineage Details
+		var genome_dict: Variant = ent.get("genome", null)
+		if genome_dict == null and ent.has("properties"):
+			genome_dict = ent["properties"].get("genome", null)
+		if genome_dict is Dictionary and not genome_dict.is_empty():
+			var gen: int = int(genome_dict.get("generation", 1))
+			var p_id: int = int(genome_dict.get("parent_id", -1))
+			txt += "=== GENOME & LINEAGE ===\n"
+			txt += "Generation: %d\n" % gen
+			if p_id > 0:
+				txt += "Lineage:    Offspring of #%d\n" % p_id
+			else:
+				txt += "Lineage:    Founder Ancestor (Gen 1)\n"
+			if genome_dict.has("speed_mult"):
+				txt += "Speed Allele:  %.2fx\n" % float(genome_dict.get("speed_mult", 1.0))
+			if genome_dict.has("metabolism_efficiency"):
+				txt += "Metabolism:    %.2fx efficiency\n" % float(genome_dict.get("metabolism_efficiency", 1.0))
+			if genome_dict.has("size_scale"):
+				txt += "Body Scale:    %.2fx\n" % float(genome_dict.get("size_scale", 1.0))
+			if genome_dict.has("drought_tolerance"):
+				txt += "Drought Tol:   %.0f%% min moisture\n" % (float(genome_dict.get("drought_tolerance", 0.20)) * 100.0)
+			txt += "\n"
+
 	# Environment Info
+
 	var env: Variant = data.get("environment", null)
 	if env is Dictionary and not env.is_empty():
 		var pos: Vector3 = data.get("position", Vector3.ZERO)

@@ -94,7 +94,8 @@ static func save_complete_world(
 					"max_biomass": snapped(p.max_biomass, 0.1),
 					"health": snapped(p.health, 0.1),
 					"age": snapped(p.age, 0.1),
-					"stage": int(p.stage)
+					"stage": int(p.stage),
+					"genome": p.genome.serialize() if p.genome else {}
 				})
 
 		if coordinator.fauna_sim:
@@ -109,7 +110,8 @@ static func save_complete_world(
 					"energy": snapped(h.energy, 0.1),
 					"age": snapped(h.age, 0.1),
 					"life_stage": int(h.life_stage),
-					"state": int(h.state)
+					"state": int(h.state),
+					"genome": h.genome.serialize() if h.genome else {}
 				})
 
 			for pr in coordinator.fauna_sim.get_all_predators():
@@ -123,8 +125,10 @@ static func save_complete_world(
 					"energy": snapped(pr.energy, 0.1),
 					"age": snapped(pr.age, 0.1),
 					"life_stage": int(pr.life_stage),
-					"state": int(pr.state)
+					"state": int(pr.state),
+					"genome": pr.genome.serialize() if pr.genome else {}
 				})
+
 
 		if coordinator.metrics:
 			payload["metrics"] = {

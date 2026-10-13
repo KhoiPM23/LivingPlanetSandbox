@@ -291,3 +291,39 @@
   - Registered suite in `tests/test_runner.gd`: **53 Passed across 12 suites, 0 Failed**.
   - Verified benchmark suite: **44.5 Avg FPS**, 7.00 ms avg frame time on Target Workload.
   - Verified release smoke test: **7/7 Passed**.
+
+### BLOCK 2 — Gene, Di truyền và Chọn lọc Tự nhiên (COMPLETED)
+- **Decoupled Genome Architecture (`res://core/ecosystem/genome.gd`):**
+  - Implemented `EcosystemGenome` class representing heritable genotypes and phenotypic expressions for living entities:
+    - **Fauna alleles:** `speed_mult` ($0.70 \to 1.50$), `metabolism_efficiency` ($0.70 \to 1.40$), `size_scale` ($0.75 \to 1.35$), `perception_radius` ($16.0 \to 44.0\text{m}$), and `coat_tint` (visual coloration).
+    - **Flora alleles:** `drought_tolerance` ($0.10 \to 0.40$ min soil moisture), `growth_rate_mult` ($0.60 \to 1.50$), `seed_spread_radius` ($4.0 \to 14.0\text{m}$), and `foliage_tint` (visual pigment).
+    - **Biological trade-offs:** Higher speed increases metabolic calorie burn rate ($P \propto \text{speed}^{1.4}$); larger size increases hunger demand; drought-resistant plants experience slightly lower peak growth rate during wet seasons; wide perception incurs cognitive energy overhead.
+    - **Mutation & Lineage:** Controlled mutation with configurable rate (15%) and variance (8%), bounding traits within viable physiological ranges. Generational counters (`generation`) and parent tracking (`parent_id`) for lineage tracing.
+    - **Full Serialization:** `to_dict()` and `from_dict()` for lossless persistence and save-state roundtripping.
+- **Flora Simulation Genetics Integration (`res://core/ecosystem/flora_simulation.gd`):**
+  - Plants store and pass their individual `EcosystemGenome`.
+  - Growth and drought stress decay rates are governed by genome alleles. Plants with higher drought tolerance survive harsher soil aridity, while high-growth variants flourish rapidly under abundant moisture.
+  - Offspring seeds inherit mutated parent genomes and disperse across `seed_spread_radius`.
+- **Fauna Simulation Genetics Integration (`res://core/ecosystem/fauna_simulation.gd`):**
+  - Herbivores and predators store individual `EcosystemGenome`.
+  - Movement speed scales with `speed_mult`; calorie burn scales dynamically with speed and metabolism efficiency.
+  - Perception radius for food and threat detection dynamically scales with `perception_radius`.
+  - Offspring inherit parent genome with mutations, advancing the entity's `generation` counter.
+- **Ecosystem Presentation Phenotypic Rendering (`res://presentation/ecosystem/ecosystem_presentation.gd`):**
+  - Entity visual models physically scale in 3D according to `size_scale`.
+  - Procedural material overrides apply heritable coat and foliage tints (`coat_tint` on animal meshes, `foliage_tint` on plant meshes) with individual distinct visual variety across generations.
+- **HUD Genetic Telemetry & Inspector (`res://presentation/ui/hud.gd`):**
+  - Telemetry bar displays live ecosystem genetics: Average Herbivore Speed (`Avg Spd`), Average Plant Drought Tolerance (`Avg Drg`), and Maximum Lineage Generation (`Max Gen`).
+  - Inspector card displays detailed Gene Card: Species, Generation, Speed mult, Metabolism efficiency, Size scale, Perception radius, and Drought tolerance.
+- **Schema v2 Backward-Compatible World Persistence (`res://core/persistence/world_persistence.gd`):**
+  - Serializes `genome` dictionaries alongside flora and fauna entities.
+  - Implements automatic migration: legacy saves without genomes gracefully synthesize default Gen 1 baseline genomes, preserving 100% save-file compatibility.
+- **Testing & Verification:**
+  - Created `tests/test_genetics_and_selection.gd` with 5 contract tests:
+    1. `test_genome_initialization_and_tradeoffs`: Validates default alleles, trade-off formulas, and bounds.
+    2. `test_genome_mutation_and_inheritance`: Validates reproduction mutation, generation advancement, and parent ID tracking.
+    3. `test_genome_serialization_roundtrip`: Verifies 100% lossless dictionary roundtripping.
+    4. `test_flora_inheritance_and_drought_selection`: Demonstrates natural selection where drought-tolerant plants survive arid soil while intolerant plants wither.
+    5. `test_fauna_inheritance_and_speed_selection`: Validates heritable speed inheritance across generations and trait-driven metabolic burn.
+  - Test runner: **58 Passed across 13 suites, 0 Failed**.
+  - Release smoke test: **7/7 Passed**.

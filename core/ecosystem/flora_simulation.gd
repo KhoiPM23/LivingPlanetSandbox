@@ -30,27 +30,31 @@ class PlantData:
 	var optimal_temp_max: float = 32.0 # °C
 	var base_growth_rate: float = 0.4 # Biomass gained per second in ideal conditions
 	var spread_cooldown: float = 15.0 # Seconds between reproduction attempts
-	
-	func _init(p_id: int, p_species: String, p_pos: Vector3, p_max_biomass: float = 10.0) -> void:
+	var genome: EcosystemGenome = null
+
+	func _init(p_id: int, p_species: String, p_pos: Vector3, p_max_biomass: float = 10.0, p_genome: EcosystemGenome = null) -> void:
 		id = p_id
 		species = p_species
 		position = p_pos
-		max_biomass = p_max_biomass
-		biomass = max_biomass * 0.35 # Start as young growing plant
+		genome = p_genome if p_genome != null else EcosystemGenome.create_default_flora(p_species)
 		health = 100.0
 		age = 0.0
 		if species == "shrub_bush":
-			max_biomass = 25.0
-			base_growth_rate = 0.25
-			min_moisture = 0.30
+			max_biomass = 25.0 * genome.size_scale
+			base_growth_rate = genome.get_effective_growth_rate(0.25)
+			min_moisture = genome.drought_tolerance
 			max_age = 300.0
 			spread_cooldown = 25.0
 		else:
-			max_biomass = 10.0
-			base_growth_rate = 0.5
-			min_moisture = 0.20
+			max_biomass = 10.0 * genome.size_scale
+			base_growth_rate = genome.get_effective_growth_rate(0.5)
+			min_moisture = genome.drought_tolerance
 			max_age = 180.0
 			spread_cooldown = 15.0
+		if p_max_biomass > 0.0 and p_max_biomass != 10.0 and p_max_biomass != 25.0:
+			max_biomass = p_max_biomass * genome.size_scale
+		biomass = max_biomass * 0.35 # Start as young growing plant
+
 
 var _plants: Dictionary = {} # int id -> PlantData
 var _next_id: int = 2000
@@ -70,17 +74,17 @@ func _init(rng: RandomNumberGenerator, registry: EntityRegistry, metrics: Ecosys
 	_metrics = metrics
 	_event_bus = bus
 
-func spawn_plant(species: String, pos: Vector3, initial_biomass: float = -1.0) -> int:
+func spawn_plant(species: String, pos: Vector3, initial_biomass: float = -1.0, genome: EcosystemGenome = null) -> int:
 	var id: int = _next_id
 	_next_id += 1
-	
-	var plant: PlantData = PlantData.new(id, species, pos)
+
+	var plant: PlantData = PlantData.new(id, species, pos, 10.0, genome)
 	if initial_biomass >= 0.0:
 		plant.biomass = clampf(initial_biomass, 0.1, plant.max_biomass)
 	_plants[id] = plant
-	
+
 	_add_to_spatial_grid(id, pos)
-	
+
 	# Register data entity in EntityRegistry
 	if _entity_registry:
 		_entity_registry.spawn_entity("plant", pos, {
@@ -88,16 +92,18 @@ func spawn_plant(species: String, pos: Vector3, initial_biomass: float = -1.0) -
 			"biomass": plant.biomass,
 			"max_biomass": plant.max_biomass,
 			"stage": plant.stage,
-			"health": plant.health
+			"health": plant.health,
+			"genome": plant.genome.serialize() if plant.genome else {}
 		}, id)
-		
+
 	if _metrics:
 		_metrics.record_birth("plant")
-		
+
 	if _event_bus:
 		_event_bus.publish("plant_spawned", {"id": id, "species": species, "position": pos})
-		
+
 	return id
+
 
 func remove_plant(id: int, reason: String = "decay") -> void:
 	if not _plants.has(id):
@@ -105,13 +111,13 @@ func remove_plant(id: int, reason: String = "decay") -> void:
 	var plant: PlantData = _plants[id]
 	_remove_from_spatial_grid(id, plant.position)
 	_plants.erase(id)
-	
+
 	if _entity_registry:
 		_entity_registry.despawn_entity(id, reason)
-		
+
 	if _metrics:
 		_metrics.record_death("plant", reason)
-		
+
 	if _event_bus:
 		_event_bus.publish("plant_died", {"id": id, "reason": reason})
 
@@ -128,12 +134,12 @@ func get_all_plants() -> Array:
 func find_nearest_food(pos: Vector3, search_radius: float, min_biomass: float = 1.0) -> PlantData:
 	var min_dist_sq: float = search_radius * search_radius
 	var best_plant: PlantData = null
-	
+
 	var min_cx: int = int(floor((pos.x - search_radius) / GRID_CELL_SIZE))
 	var max_cx: int = int(floor((pos.x + search_radius) / GRID_CELL_SIZE))
 	var min_cz: int = int(floor((pos.z - search_radius) / GRID_CELL_SIZE))
 	var max_cz: int = int(floor((pos.z + search_radius) / GRID_CELL_SIZE))
-	
+
 	for cx: int in range(min_cx, max_cx + 1):
 		for cz: int in range(min_cz, max_cz + 1):
 			var cell_key: Vector2i = Vector2i(cx, cz)
@@ -147,7 +153,7 @@ func find_nearest_food(pos: Vector3, search_radius: float, min_biomass: float = 
 					if dist_sq < min_dist_sq:
 						min_dist_sq = dist_sq
 						best_plant = p
-						
+
 	return best_plant
 
 ## Consumes biomass from a plant. Returns actual amount consumed.
@@ -157,42 +163,42 @@ func consume_biomass(plant_id: int, request_amount: float) -> float:
 	var p: PlantData = _plants[plant_id]
 	var eaten: float = minf(p.biomass, request_amount)
 	p.biomass = maxf(0.0, p.biomass - eaten)
-	
+
 	# Update stage if overgrazed
 	if p.biomass < 0.5 and p.stage == GrowthStage.MATURE:
 		p.stage = GrowthStage.SPROUT
-		
+
 	if _entity_registry:
 		_entity_registry.update_property(plant_id, "biomass", p.biomass)
 		_entity_registry.update_property(plant_id, "stage", p.stage)
-		
+
 	return eaten
 
 ## Simulates plant growth, weather impact, reproduction and death
 func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 	if env_grid == null:
 		return
-		
+
 	var ids_to_remove: Array[Dictionary] = []
 	var new_sprouts: Array[Dictionary] = []
-	
+
 	var total_biomass: float = 0.0
 	var total_health: float = 0.0
 	var total_moisture_sum: float = 0.0
-	
+
 	for id: int in _plants.keys():
 		var p: PlantData = _plants[id]
 		p.age += delta
 		if p.spread_cooldown > 0.0:
 			p.spread_cooldown -= delta
-			
+
 		var env: Dictionary = env_grid.sample_at(p.position.x, p.position.z)
 		var temp: float = env.get("temperature", 20.0)
 		var moisture: float = env.get("moisture", 0.6)
 		var sun: float = env.get("sun_exposure", 0.8)
-		
+
 		total_moisture_sum += moisture
-		
+
 		# 1. Environmental Causal Impact
 		if moisture >= p.min_moisture:
 			# Sufficient moisture: Growth favored by warmth and sunlight
@@ -203,7 +209,7 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 				temp_mult = 1.0 - (absf(temp - 20.0) / 25.0) # Peak around 20°C
 			elif temp < 0.0:
 				temp_mult = 0.0 # Dormant in freeze
-				
+
 			var growth: float = p.base_growth_rate * moisture_mult * sun_mult * temp_mult * delta
 			p.biomass = minf(p.max_biomass, p.biomass + growth)
 			p.health = minf(100.0, p.health + 2.5 * delta)
@@ -214,11 +220,11 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 			var biomass_loss: float = 0.6 * deficit * delta
 			p.health = maxf(0.0, p.health - drought_decay)
 			p.biomass = maxf(0.0, p.biomass - biomass_loss)
-			
+
 		# Old age decay
 		if p.age > p.max_age:
 			p.health = maxf(0.0, p.health - 6.0 * delta)
-			
+
 		# Update Growth Stage
 		if p.health <= 0.0:
 			p.stage = GrowthStage.DEAD
@@ -235,41 +241,45 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 			p.stage = GrowthStage.SPROUT
 		else:
 			p.stage = GrowthStage.SEED
-			
+
 		# 2. Reproduction / Spreading (Only mature, healthy plants in good soil)
 		if p.stage == GrowthStage.MATURE and p.health >= 70.0 and p.spread_cooldown <= 0.0 and _plants.size() < 180:
 			var spread_angle: float = _rng.randf() * TAU
-			var spread_dist: float = _rng.randf_range(3.0, 7.5)
+			var max_dist: float = p.genome.seed_spread_radius if p.genome else 7.5
+			var spread_dist: float = _rng.randf_range(3.0, max_dist)
 			var target_pos: Vector3 = p.position + Vector3(cos(spread_angle) * spread_dist, 0.0, sin(spread_angle) * spread_dist)
-			
+
 			# Check target boundary within island (radius 70m)
 			if target_pos.length() < 70.0:
 				var target_env: Dictionary = env_grid.sample_at(target_pos.x, target_pos.z)
 				if target_env.get("elevation", 1.0) > 0.4 and target_env.get("moisture", 0.0) >= p.min_moisture:
+					var child_genome: EcosystemGenome = p.genome.create_mutated_offspring(p.id, _rng, 0.22, 0.10) if p.genome else null
 					new_sprouts.append({
 						"species": p.species,
 						"pos": target_pos,
-						"biomass": 0.8
+						"biomass": 0.8,
+						"genome": child_genome
 					})
 					p.spread_cooldown = _rng.randf_range(20.0, 40.0)
-					
+
 		total_biomass += p.biomass
 		total_health += p.health
-		
+
 		# Sync data to entity registry
 		if _entity_registry:
 			_entity_registry.update_property(id, "biomass", p.biomass)
 			_entity_registry.update_property(id, "health", p.health)
 			_entity_registry.update_property(id, "stage", p.stage)
-			
+
 	# Remove dead plants
 	for dead: Dictionary in ids_to_remove:
 		remove_plant(dead["id"], dead["reason"])
-		
+
 	# Spawn new offspring
 	for s: Dictionary in new_sprouts:
-		spawn_plant(s["species"], s["pos"], s["biomass"])
-		
+		spawn_plant(s["species"], s["pos"], s["biomass"], s.get("genome", null))
+
+
 	# Update aggregate metrics
 	if _metrics:
 		var count: int = _plants.size()
@@ -297,7 +307,10 @@ func restore_plant(data: Dictionary) -> int:
 	var species: String = data.get("species", "grass_patch")
 	var pos: Vector3 = data.get("position", Vector3.ZERO)
 	var max_bio: float = float(data.get("max_biomass", 10.0))
-	var plant: PlantData = PlantData.new(id, species, pos, max_bio)
+	var genome: EcosystemGenome = null
+	if data.has("genome") and data["genome"] is Dictionary and not data["genome"].is_empty():
+		genome = EcosystemGenome.deserialize(data["genome"])
+	var plant: PlantData = PlantData.new(id, species, pos, max_bio, genome)
 	plant.biomass = float(data.get("biomass", plant.biomass))
 	plant.health = float(data.get("health", 100.0))
 	plant.age = float(data.get("age", 0.0))
@@ -310,9 +323,11 @@ func restore_plant(data: Dictionary) -> int:
 			"biomass": plant.biomass,
 			"max_biomass": plant.max_biomass,
 			"stage": plant.stage,
-			"health": plant.health
+			"health": plant.health,
+			"genome": plant.genome.serialize() if plant.genome else {}
 		}, id)
 	return id
+
 
 func clear() -> void:
 	if _entity_registry:

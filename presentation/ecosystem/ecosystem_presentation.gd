@@ -167,10 +167,11 @@ func _update_herbivores(delta: float) -> void:
 		active_ids[h.id] = true
 		var node: Node3D = _herbivore_nodes.get(h.id, null)
 		if node == null:
-			node = _create_herbivore_mesh()
+			node = _create_herbivore_mesh(h.genome)
 			add_child(node)
 			_herbivore_nodes[h.id] = node
 			node.position = h.position
+
 
 		var target_pos: Vector3 = h.position
 		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
@@ -237,10 +238,11 @@ func _update_predators(delta: float) -> void:
 		active_ids[p.id] = true
 		var node: Node3D = _predator_nodes.get(p.id, null)
 		if node == null:
-			node = _create_predator_mesh()
+			node = _create_predator_mesh(p.genome)
 			add_child(node)
 			_predator_nodes[p.id] = node
 			node.position = p.position
+
 
 		var target_pos: Vector3 = p.position
 		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
@@ -288,10 +290,11 @@ func _update_plants() -> void:
 		active_ids[pl.id] = true
 		var node: Node3D = _plant_nodes.get(pl.id, null)
 		if node == null:
-			node = _create_plant_mesh(pl.species)
+			node = _create_plant_mesh(pl.species, pl.genome)
 			add_child(node)
 			_plant_nodes[pl.id] = node
 			node.position = pl.position
+
 
 		var target_scale: float = 0.4 + (pl.biomass / pl.max_biomass) * 0.8
 		if absf(node.scale.x - target_scale) > 0.02:
@@ -303,21 +306,31 @@ func _update_plants() -> void:
 			_plant_nodes.erase(id)
 
 ## Low-poly stylized herbivore model using shared meshes and materials
-func _create_herbivore_mesh() -> Node3D:
+func _create_herbivore_mesh(genome: EcosystemGenome = null) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "HerbivoreView"
 
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_herb_body
-	body_inst.material_override = _mat_herb_body
+	if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
+		var custom_mat: StandardMaterial3D = _mat_herb_body.duplicate()
+		custom_mat.albedo_color = genome.coat_tint
+		body_inst.material_override = custom_mat
+	else:
+		body_inst.material_override = _mat_herb_body
 	body_inst.position = Vector3(0.0, 0.5, 0.0)
 	root.add_child(body_inst)
 
 	var head_inst: MeshInstance3D = MeshInstance3D.new()
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_herb_head
-	head_inst.material_override = _mat_herb_head
+	if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
+		var custom_hmat: StandardMaterial3D = _mat_herb_head.duplicate()
+		custom_hmat.albedo_color = genome.coat_tint.darkened(0.12)
+		head_inst.material_override = custom_hmat
+	else:
+		head_inst.material_override = _mat_herb_head
 	head_inst.position = Vector3(0.0, 0.85, 0.5)
 	root.add_child(head_inst)
 
@@ -337,17 +350,25 @@ func _create_herbivore_mesh() -> Node3D:
 	horn_right.rotation_degrees = Vector3(15, 0, 15)
 	root.add_child(horn_right)
 
+	if genome:
+		root.scale = Vector3.ONE * genome.size_scale
+
 	return root
 
 ## Low-poly stylized predator model using shared meshes and materials
-func _create_predator_mesh() -> Node3D:
+func _create_predator_mesh(genome: EcosystemGenome = null) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "PredatorView"
 
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_pred_body
-	body_inst.material_override = _mat_pred_body
+	if genome and genome.coat_tint != Color(0.15, 0.15, 0.16):
+		var custom_mat: StandardMaterial3D = _mat_pred_body.duplicate()
+		custom_mat.albedo_color = genome.coat_tint
+		body_inst.material_override = custom_mat
+	else:
+		body_inst.material_override = _mat_pred_body
 	body_inst.position = Vector3(0.0, 0.45, 0.0)
 	root.add_child(body_inst)
 
@@ -371,28 +392,43 @@ func _create_predator_mesh() -> Node3D:
 	eye_r.position = Vector3(0.12, 0.62, 0.82)
 	root.add_child(eye_r)
 
+	if genome:
+		root.scale = Vector3.ONE * genome.size_scale
+
 	return root
 
 ## Stylized plant mesh using shared meshes, materials, and selective shadow casting
-func _create_plant_mesh(species: String) -> Node3D:
+func _create_plant_mesh(species: String, genome: EcosystemGenome = null) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "PlantView_" + species
 
 	var inst: MeshInstance3D = MeshInstance3D.new()
 	if species == "shrub_bush":
 		inst.mesh = _mesh_shrub
-		inst.material_override = _mat_shrub
+		if genome and genome.foliage_tint != Color(0.28, 0.62, 0.30):
+			var custom_mat: StandardMaterial3D = _mat_shrub.duplicate()
+			custom_mat.albedo_color = genome.foliage_tint
+			inst.material_override = custom_mat
+		else:
+			inst.material_override = _mat_shrub
 		inst.position = Vector3(0.0, _mesh_shrub.height * 0.5, 0.0)
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	else:
 		inst.mesh = _mesh_grass
-		inst.material_override = _mat_grass
+		if genome and genome.foliage_tint != Color(0.38, 0.78, 0.32):
+			var custom_mat: StandardMaterial3D = _mat_grass.duplicate()
+			custom_mat.albedo_color = genome.foliage_tint
+			inst.material_override = custom_mat
+		else:
+			inst.material_override = _mat_grass
 		inst.position = Vector3(0.0, _mesh_grass.height * 0.5, 0.0)
-		# Small ground grass patches don't need expensive shadow map passes
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	root.add_child(inst)
+	if genome:
+		root.scale = Vector3.ONE * genome.size_scale
 	return root
+
 
 func clear() -> void:
 	for node: Node3D in _herbivore_nodes.values():
