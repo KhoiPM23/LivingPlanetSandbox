@@ -4,12 +4,12 @@
 ---
 
 ### 1. Phase Status
-- **Current Milestone:** BLOCK 5 — Interactive Ecology Experiments Completed.
+- **Current Milestone:** BLOCK 6 — Full Regression, Release Candidate and Handoff Completed.
 - **Engine Version:** Godot Engine v4.6.3.stable.official.7d41c59c4 (Windows x86_64).
 - **Renderer:** Forward Plus (Vulkan 1.4.323 on Intel Iris Xe Graphics).
 - **Git Branch:** `main`.
 - **Remote Origin:** `https://github.com/KhoiPM23/LivingPlanetSandbox.git` (tracked).
-- **Standalone Release Executable:** `build/release/LivingPlanetSandbox.exe` (127.3 MB, embedded PCK, tested).
+- **Standalone Release Executable:** `build/release/LivingPlanetSandbox.exe` (126.9 MB, embedded PCK, tested standalone boot exit code 0).
 
 ---
 
@@ -40,7 +40,7 @@
 | **Schema v3 World Persistence & Migration** | PASS | Unit Test / Runtime | Schema v3 serialization, automatic backwards compatibility and migration from Schema v1/v2 saves, .bak atomic backup rotation, lossless experiment history and active pulses restoration |
 | **Observability Dashboard & HUD** | PASS | Runtime Vulkan | Glassmorphic HUD: clock, compass, weather cycle button `[Y]`, live wind & wetness telemetry, camera modes, POI selector, tool palette, 5-trait Inspector with herd deviation comparisons, multi-view throttled charts, 4-tab panel with dedicated Experiments Log |
 | **Automated Test Runner** | PASS | Headless Test Suite | All 16 suites, 92 contract tests passing with 0 failures |
-| **GPU Performance Optimization** | PASS | Vulkan 1.4 Benchmark | Target Workload 35.4 Avg FPS, 4.42 ms avg frame time, 17.83 ms p95 on Intel Iris Xe; zero node allocation in process frame |
-| **Windows Release Export** | PASS | CLI & Standalone Executable | Compiled Windows x64 release package at `build/release/LivingPlanetSandbox.exe` |
+| **GPU Performance Optimization** | PASS | Vulkan 1.4 Benchmark | Target Workload 45.5 Avg FPS, 12.96 ms avg frame time, 14.90 ms p95 on Intel Iris Xe; Light Workload 38.6 FPS, Stress Workload 34.5 FPS |
+| **Windows Release Export** | PASS | CLI & Standalone Executable | Compiled Windows x64 release package at `build/release/LivingPlanetSandbox.exe` (126.9 MB) with clean standalone boot verified |
 | **Visual QA Capture** | PASS | Viewport Capture | Dual-mode runtime screenshots (`screenshot_flycam_view.png`, `screenshot_walker_view.png`) and 7 Block 7 screenshots |
 

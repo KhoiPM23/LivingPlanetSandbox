@@ -623,4 +623,32 @@ es://presentation/ui/hud.gd):**
   - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
   - Multi-tier benchmark suite (`tests/benchmark_suite.gd`): Target Workload **35.4 Avg FPS**, 4.42 ms avg frame time, 17.83 ms p95 on Intel Iris Xe.
 
-
+### BLOCK 6 — Full Regression, Release Candidate and Handoff (COMPLETED)
+- **Git & Scope Audit:**
+  - Audited full changes across Blocks 1–5: 31 files, 3,327 insertions, 314 deletions.
+  - Zero leftover temporary files, debug prints, or critical TODOs. Zero hardcoded absolute paths (`C:\` / `D:\`).
+  - Verified MIT license and attribution for external references: `judeudumullage/Genesis` biological model concepts, `Terrain3D` addon (`addons/terrain_3d/LICENSE.txt`), and `LesusX/Water-Shader`.
+- **Automated Regression Verification:**
+  - Full automated contract test runner (`tests/test_runner.gd`): **92/92 tests passed across all 16 suites (0 failures, exit code 0)**.
+    - `WorldSeed` (2/2), `WorldClock` (3/3), `WorldEventBus` (2/2), `EntityRegistry` (2/2), `WorldPersistence` (2/2), `TestPlayableWorld` (5/5), `TestEnvironmentSystems` (6/6), `TestCausalEcosystem` (7/7), `TestExperimentToolsAndPersistence` (6/6), `TestStabilityAndRegression` (6/6), `TestVisualPolishAndUX` (5/5), `TestCameraExploration` (11/11), `TestGeneticsAndSelection` (9/9), `TestWeatherAndSurface` (8/8), `TestGraphicsAndEvolutionTelemetry` (8/8), `TestCausalExperimentTools` (10/10).
+  - Standalone release smoke test (`tests/test_release_smoke.gd`): **7/7 passed (exit code 0)** verifying clean startup, world generation (1024 cells, 55 plants, 14 fauna), camera terrain clearance clamping (8.54m), simulation clock advance (0.30s -> 1.30s), player tool spawn (55 -> 56 plants), Schema v2/v3 save/load roundtrip, and settings modal toggle.
+- **Integration Test Matrix:**
+  - Verified seed determinism and reproducibility across seeds `1337`, `42069`, `99999`.
+  - Verified dual-mode camera transitions (`Flycam` and `First-Person Walker` `[V]`) with mouse capture, eye height at 1.65m, capsule physics, slope traversal up to 48°, and menu input blocking.
+  - Verified dynamic weather (`Clear`, `Cloudy`, `Rain`, `Drought`), 2D wind vectors, harmonic gusts, terrain wetness reactions, and camera-anchored precipitation.
+  - Verified scalable graphics presets (`Low`, `Balanced/Iris Xe`, `Cinematic`) with config persistence and instant application.
+  - Verified climate interventions (`Heatwave`, `Frost`, `Fertilize`, `Disaster Shock`, `Mutate`, `Deluge Pulse`) and downstream causal cascade feedback.
+  - Verified multi-generation 5-trait genomes, Mendelian recombination, bounded mutation, and telemetry variance/diversity tracking.
+  - Verified save/load backwards compatibility and automated migration from Schema v1/v2 to Schema v3.
+- **Standalone Windows Release Candidate Export:**
+  - Validated official Godot 4.6.3 Windows x64 release export template (`windows_release_x86_64.exe`, 104.6 MB, SHA256 `91724F15024A3A545E28CCD83134403D31CE2323A38E51C95E4DFA282F732AB6`).
+  - Re-exported standalone release candidate executable to `build/release/LivingPlanetSandbox.exe` (126.9 MB, embedded PCK) with `libterrain.windows.release.x86_64.dll`.
+  - Executed standalone binary boot test independently: boots main world in under 1.0s, runs 60 simulation frames, and terminates cleanly with exit code 0.
+- **Performance Measurement & Visual Evidence:**
+  - Reproducible multi-tier benchmark on Intel Iris Xe graphics ($1280 \times 720$ Forward+ Vulkan):
+    - **Target Workload:** **45.5 Avg FPS**, 12.96 ms avg frame time, 14.90 ms p95 (exceeding 32 FPS acceptance target).
+    - **Light Workload:** **38.6 Avg FPS**, 13.66 ms avg frame time, 15.11 ms p95.
+    - **Stress Workload:** **34.5 Avg FPS**, 3.63 ms avg frame time, 8.42 ms p95.
+  - Runtime visual QA evidence verified: `screenshot_flycam_view.png`, `screenshot_walker_view.png`, and 7 Block 7 screenshots (`panorama`, `closeup`, `night`, `fauna`, `ui`, `intervention`, `menu`).
+- **Documentation & Final Handoff:**
+  - Updated `README.md`, `CURRENT_STATE.md`, and `WORK_LOG.md` with full Block 1–6 documentation.

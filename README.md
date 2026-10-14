@@ -53,8 +53,8 @@ The core design philosophy is **authentic ecological causality**: changes in the
 
 ### 4. Player Experiment Tools & Causal Feedback
 - **3D Surface Cursor:** Dynamic torus brush indicator snaps to terrain with real-time radius scaling (`[ / ]`).
-- **11 Interactive Sandbox Tools:**
-  - `[1] Inspect`: Interrogate entity vitals, heritable genome alleles, lineage, or terrain microclimate.
+- **13 Interactive Sandbox Tools:**
+  - `[1] Inspect`: Interrogate entity vitals, heritable genome alleles, lineage, comparative herd averages, or terrain microclimate.
   - `[2] +Moisture`: Hydrate bounded region (+20% moisture brush).
   - `[3] -Moisture`: Induce localized drought (-20% moisture brush).
   - `[4] +Plant`: Seed new vegetation on viable dry ground.
@@ -65,14 +65,17 @@ The core design philosophy is **authentic ecological causality**: changes in the
   - `[9] Frost`: Cool region (-8.0°C brush). Slows metabolism and induces plant dormancy.
   - `[0] Fertilize`: Enriched soil fertility brush (+1.5 boost, up to 2.5x). Accelerates biomass accumulation by 2.5x.
   - `[-] Disaster Shock`: Catastrophic localized heat spike (+12.0°C) and desiccation (-45% moisture) to test ecological resilience.
+  - `[=] Mutate`: Apply in-place bounded genetic mutations to targeted subpopulation with trait re-evaluation.
+  - `[;] Deluge Pulse`: Trigger finite high-pressure moisture pulse (+0.06/s) with defined radius and duration countdown.
+- **Scientific Experiment History (`ExperimentHistory`):** Automatically logs session seed, initial baseline, player interventions, and computes delayed before/after ecological outcome deltas in the HUD Experiments Tab.
 - **CausalTracker & Explanations:** Spatial-temporal correlation tracks player interventions and links them to downstream cascades (withering, blooms, starvation) surfaced in HUD event logs and cell inspector.
-- **Multi-Mode Camera Exploration (`[V]`):** 4 modes (`Free-Look`, `Orbit Inspect`, `Follow Entity`, `Top-Down`), 5 scenic bookmarks (`[B]`), and dynamic compass heading (`🧭 NW 315°`).
-- **Graphics Presets (`GraphicsPresets`):** Scalable profiles (`Low`, `Balanced/Iris Xe`, `High`) accessible via the in-engine settings modal.
+- **Dual-Mode Camera Exploration (`[V]`):** Seamless toggle between Flycam free flight and First-Person Walker (`CharacterBody3D` with physical collision, 1.65m eye height, slopes up to 48°, and mouse capture). Also includes Orbit Inspect, Follow Entity, Top-Down, 5 scenic bookmarks (`[B]`), and dynamic compass heading (`🧭 NW 315°`).
+- **Graphics Presets (`GraphicsPresets`):** Scalable profiles (`Low`, `Balanced/Iris Xe`, `Cinematic`) accessible via the in-engine settings modal.
 
-### 5. Atomic Schema v2 Persistence
+### 5. Atomic Schema v3 Persistence & Migration
 - **Crash-Safe Serialization:** Writes save states to `<path>.tmp`, rotates previous save to `<path>.bak`, and promotes via atomic rename.
-- **Complete World State:** Persists seed, clock, weather wind vector, 1024 cells (moisture, temperature, fertility), flora and fauna with genomes, metrics, and player causal interventions.
-- **Self-Healing:** Automatically falls back to `.bak` if primary JSON is corrupted or invalid.
+- **Complete World State:** Persists seed, clock, weather wind vector, 1024 cells (moisture, temperature, fertility), active climate pulses, flora and fauna with 5-trait genomes, metrics, experiment history, and player causal interventions.
+- **Self-Healing & Backwards Compatibility:** Automatically migrates Schema v1/v2 saves to Schema v3 with default genome synthesis, and falls back to `.bak` if primary JSON is corrupted or invalid.
 
 ---
 
@@ -80,15 +83,16 @@ The core design philosophy is **authentic ecological causality**: changes in the
 
 | Action | Primary Input | Secondary / Alternative |
 | :--- | :--- | :--- |
-| **Move Camera** | `W / A / S / D` | Arrow Keys |
-| **Altitude Up / Down** | `Space` / `C` | `E` / `Q` |
-| **Flight Speed Boost** | `Shift` (Hold) | — |
+| **Move (Flycam / Walker)** | `W / A / S / D` | Arrow Keys |
+| **Walker Jump / Flycam Up** | `Space` | `E` (Flycam) |
+| **Walker Sprint / Boost** | `Shift` (Hold) | — |
+| **Flycam Altitude Down** | `C` | `Q` |
 | **Adjust Flight Speed** | `Mouse Wheel Up / Down` | Flight Slider in Settings |
-| **Look / Rotate View** | `Right Mouse Button` (Hold + Drag) | Middle Mouse Button |
-| **Select Tools [1 - 7, 8, 9, 0, -]** | Number Keys `1` to `0`, `-` | Click Tool Palette in HUD |
-| **Apply Tool** | `Left Mouse Button` | — |
+| **Look / Rotate View** | `Mouse Move` (Walker) / `RMB Drag` (Flycam) | Middle Mouse Button |
+| **Toggle Flycam / First-Person** | `V` | HUD Mode Button |
+| **Select Tools [1 - 7, 8, 9, 0, -, =, ;]** | Number Keys `1` to `0`, `-`, `=`, `;` | Click Tool Palette in HUD |
+| **Apply Tool** | `Left Mouse Button` | Crosshair Center (Walker) |
 | **Adjust Brush Radius** | `[` (Decrease) / `]` (Increase) | — |
-| **Cycle Camera Mode** | `V` | HUD Mode Button |
 | **Cycle Scenic Bookmarks** | `B` | — |
 | **Track Inspected Entity** | `F` | Inspector Card Button |
 | **Cycle Weather State** | `Y` / `T` | Top Toolbar Weather Button |
@@ -96,7 +100,7 @@ The core design philosophy is **authentic ecological causality**: changes in the
 | **Toggle Help & Guide** | `F1` | `Help [F1]` Button in HUD |
 | **QuickSave Experiment** | `F5` | Simulation Menu Tab |
 | **QuickLoad Experiment** | `F9` | Simulation Menu Tab |
-| **Pause / Resume** | `Space` (when not flying) | Top Toolbar Button |
+| **Pause / Resume** | `P` / Top Toolbar Button | `Space` (Flycam only) |
 | **Toggle HUD Visibility** | `H` | Top Toolbar Button |
 
 ---
@@ -115,11 +119,12 @@ Living Planet Sandbox is engineered and measured specifically for thin-and-light
 | **Storage** | 250 MB free space | 500 MB free space |
 
 ### Measured Target Hardware Baseline (Intel Iris Xe Integrated GPU):
-- **Average Framerate:** 30.8 – 41.5 FPS at $1280 \times 720$ Windowed (Vulkan Forward+)
-- **Draw Calls:** Peak 1,009 calls (well below 1,500 target budget)
-- **Rendered Primitives:** 822,834 vertices (reduced by 40.2% via shadow clamping)
-- **p95 Frame Time:** 47.24 ms
-- **Simulation Step Overhead:** 1.24 ms at 2Hz tick rate
+- **Target Workload Framerate:** 45.5 Avg FPS at $1280 \times 720$ Windowed (Forward+ Vulkan)
+- **Light Workload Framerate:** 38.6 Avg FPS
+- **Stress Workload Framerate:** 34.5 Avg FPS (Heavy Population Density)
+- **Average Frame Time:** 12.96 ms (p95: 14.90 ms)
+- **Simulation Step Overhead:** 1.54 ms at 10Hz tick rate
+- **Static Memory Footprint:** 60.5 MB
 
 ---
 
@@ -144,7 +149,7 @@ Living Planet Sandbox is engineered and measured specifically for thin-and-light
 
 ## 🧪 Testing & Verification
 
-The project includes an automated contract test suite with **100% pass rate** across 16 test suites (74 tests total):
+The project includes an automated contract test suite with **100% pass rate** across 16 test suites (92 tests total):
 
 ```powershell
 # Run all automated unit and contract tests (Headless)
@@ -154,7 +159,7 @@ cmd.exe /c "godot --headless --script res://tests/test_runner.gd"
 cmd.exe /c "godot --headless --script res://tests/test_release_smoke.gd"
 
 # Run reproducible multi-tier hardware benchmark
-cmd.exe /c "godot --script res://tests/benchmark_suite.gd -- --target"
+cmd.exe /c "godot --headless --script res://tests/benchmark_suite.gd -- --target"
 
 # Capture fresh runtime visual QA screenshots
 cmd.exe /c "godot --script res://tests/visual_qa_capture.gd"
@@ -162,21 +167,21 @@ cmd.exe /c "godot --script res://tests/visual_qa_capture.gd"
 
 ### Test Suite Coverage:
 - `WorldSeed`: PRNG determinism & isolated child streams
-- `WorldClock`: Discrete time advancement, dilation, pause
+- `WorldClock`: Discrete time advancement, dilation, pause, IEEE-754 epsilon tolerance
 - `WorldEventBus`: Pub/sub event isolation & signal delivery
 - `EntityRegistry`: ID sequencing, component storage, despawn
-- `WorldPersistence`: Schema v2 serialization & `.bak` atomic recovery
+- `WorldPersistence`: Schema v3 serialization, migration, & `.bak` atomic recovery
 - `TestPlayableWorld`: Procedural terrain elevation, water plane, vegetation scatter
 - `TestEnvironmentSystems`: World config validation, environmental grid, diurnal cycle, Markov weather, Whittaker biomes
 - `TestCausalEcosystem`: Flora growth/decay, herbivore metabolism, predator hunting, paired causal drought experiment
 - `TestExperimentToolsAndPersistence`: Tool interventions, atomic save rotation, clean world reset
 - `TestStabilityAndRegression`: 50 rapid pause cycles, 5 repeated save/load cycles, 10 rapid resets, desert collapse, 200 carrying capacity cap
 - `TestVisualPolishAndUX`: In-engine menu modal toggle & tabs, camera ground clearance, inspector vitals formatting, selection highlight ring, tool pulse lifecycles
-- `TestCameraExploration`: Camera modes, terrain ground clearance, orbit inspection math, entity tracking, scenic bookmarks, compass heading
-- `TestGeneticsAndSelection`: Heritable genomes, allele mutation, trade-offs, drought natural selection, speed selection
-- `TestWeatherAndSurface`: 2D wind vectors, harmonic gusts, terrain wetness reactions, Gerstner wind waves, rain speed modulation
-- `TestGraphicsAndEvolutionTelemetry`: Graphics presets (Low, Balanced, High), config persistence, allele variance, Shannon diversity index, bottleneck warning
-- `TestCausalExperimentTools`: Climate brushes (Heatwave, Frost, Fertilizer), disaster shock, CausalTracker correlation, growth acceleration, persistence
+- `TestCameraExploration`: Camera modes, terrain ground clearance, orbit inspection math, entity tracking, first-person walker physics, scenic bookmarks, compass heading
+- `TestGeneticsAndSelection`: Heritable genomes, 5-trait bounds, allele mutation, Mendelian recombination, drought natural selection, speed selection, Schema v2 to v3 migration
+- `TestWeatherAndSurface`: 2D wind vectors, harmonic gusts, terrain wetness reactions, Gerstner wind waves, rain speed modulation, camera-anchored precipitation
+- `TestGraphicsAndEvolutionTelemetry`: Graphics presets (Low, Balanced, Cinematic), config persistence, allele variance, Shannon diversity index, bottleneck warning
+- `TestCausalExperimentTools`: Climate brushes (Heatwave, Frost, Fertilizer), disaster shock, CausalTracker correlation, controlled population mutation, finite climate pulses, experiment history before/after tracking
 
 ---
 
