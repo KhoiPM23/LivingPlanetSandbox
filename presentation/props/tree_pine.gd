@@ -1,13 +1,45 @@
 class_name TreePine
 extends Node3D
 
-## Stylized evergreen tree with trunk and layered conical foliage.
+## High-fidelity natural evergreen/pine tree with authentic 3D branch silhouettes.
+## Sourced from CC0 KayKit Forest Pack.
 ## Uses shared static wind shader material for synchronized GPU wind sway and surface wetness sheen.
 
 @export var tree_scale: float = 1.0
 
 static var _shared_foliage_mat: ShaderMaterial = null
 static var _shared_trunk_mat: StandardMaterial3D = null
+static var _cached_meshes: Array = []
+
+static func _init_cache() -> void:
+	if not _cached_meshes.is_empty():
+		return
+	var gltf: GLTFDocument = GLTFDocument.new()
+	var state: GLTFState = GLTFState.new()
+	var err: Error = gltf.append_from_file("res://presentation/assets/models/forest.glb", state)
+	if err != OK:
+		return
+	var root: Node = gltf.generate_scene(state)
+	if not root:
+		return
+
+	var candidate_names: Array = ["Tree_1_A_Color1", "Tree_1_C_Color1", "Tree_3_A_Color1", "Tree_4_A_Color1"]
+	var tex: Texture2D = null
+	for cname in candidate_names:
+		var mi: MeshInstance3D = root.find_child(cname, true, false) as MeshInstance3D
+		if mi and mi.mesh:
+			_cached_meshes.append(mi.mesh)
+			if tex == null and mi.mesh.get_surface_count() > 0:
+				var m = mi.mesh.surface_get_material(0)
+				if m is StandardMaterial3D and m.albedo_texture:
+					tex = m.albedo_texture
+
+	var shared_mat: ShaderMaterial = get_shared_foliage_material()
+	if tex and shared_mat:
+		shared_mat.set_shader_parameter("albedo_texture", tex)
+		shared_mat.set_shader_parameter("use_texture", true)
+
+	root.free()
 
 static func get_shared_foliage_material() -> ShaderMaterial:
 	if _shared_foliage_mat == null:
@@ -19,6 +51,7 @@ static func get_shared_foliage_material() -> ShaderMaterial:
 		_shared_foliage_mat.set_shader_parameter("wind_speed", 1.2)
 		_shared_foliage_mat.set_shader_parameter("wind_strength", 0.18)
 		_shared_foliage_mat.set_shader_parameter("wetness", 0.0)
+		_shared_foliage_mat.set_shader_parameter("use_texture", false)
 	return _shared_foliage_mat
 
 static func get_shared_trunk_material() -> StandardMaterial3D:
@@ -33,7 +66,21 @@ func _ready() -> void:
 
 func _build_tree() -> void:
 	scale = Vector3.ONE * tree_scale
+	_init_cache()
 
+	if not _cached_meshes.is_empty():
+		# Deterministic variation selection based on position hash
+		var idx: int = abs(int(position.x * 7.0 + position.z * 13.0)) % _cached_meshes.size()
+		var mesh: Mesh = _cached_meshes[idx]
+
+		var tree_inst: MeshInstance3D = MeshInstance3D.new()
+		tree_inst.name = "TreeModel"
+		tree_inst.mesh = mesh
+		tree_inst.material_override = get_shared_foliage_material()
+		add_child(tree_inst)
+		return
+
+	# Fallback primitive if asset not loaded
 	# Trunk
 	var trunk_mesh: CylinderMesh = CylinderMesh.new()
 	trunk_mesh.top_radius = 0.22

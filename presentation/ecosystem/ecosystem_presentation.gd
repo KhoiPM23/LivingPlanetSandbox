@@ -2,8 +2,9 @@ class_name EcosystemPresentation
 extends Node3D
 
 ## Visual presentation layer for living fauna and dynamic flora.
+## High-fidelity animal models with rigged skeletons and natural locomotion animations (Quaternius CC0).
+## High-fidelity multi-tier vegetation models (KayKit & Kenney CC0).
 ## Purely reflects simulation state. Zero business logic or simulation state mutation.
-## Optimized: Shared static meshes & materials, selective shadow culling, dirty transform caching.
 
 var _coordinator: EcosystemCoordinator = null
 var _herbivore_nodes: Dictionary = {} # int id -> Node3D
@@ -12,7 +13,17 @@ var _plant_nodes: Dictionary = {} # int id -> Node3D
 
 var _anim_time: float = 0.0
 
-# --- SHARED STATIC MESHES & MATERIALS (Vulkan Pipeline State Caching) ---
+# --- STATIC PACKED SCENES (Cached for high performance & Iris Xe 60 FPS) ---
+static var _stag_scene: PackedScene = null
+static var _deer_scene: PackedScene = null
+static var _wolf_scene: PackedScene = null
+
+static var _plant_shrub_mesh: Mesh = null
+static var _plant_shrub_mat: Material = null
+static var _plant_grass_mesh: Mesh = null
+static var _plant_grass_mat: Material = null
+
+# Fallback primitive resources
 var _mesh_herb_body: BoxMesh
 var _mat_herb_body: StandardMaterial3D
 var _mesh_herb_head: BoxMesh
@@ -32,11 +43,64 @@ var _mat_shrub: StandardMaterial3D
 var _mesh_grass: SphereMesh
 var _mat_grass: StandardMaterial3D
 
+var _mesh_select_ring: TorusMesh
+var _mat_select_ring: StandardMaterial3D
+var _selection_marker: MeshInstance3D
+var inspected_entity_id: int = -1
+
 func _init() -> void:
 	_init_shared_resources()
+	_init_animal_templates()
+
+static func _init_animal_templates() -> void:
+	if _stag_scene != null:
+		return
+
+	_stag_scene = _load_gltf_packed("res://presentation/assets/models/Stag.gltf")
+	_deer_scene = _load_gltf_packed("res://presentation/assets/models/Deer.gltf")
+	_wolf_scene = _load_gltf_packed("res://presentation/assets/models/Wolf.gltf")
+
+	# Load plant models from forest.glb and nature.glb
+	var f_gltf: GLTFDocument = GLTFDocument.new()
+	var f_state: GLTFState = GLTFState.new()
+	if f_gltf.append_from_file("res://presentation/assets/models/forest.glb", f_state) == OK:
+		var f_root: Node = f_gltf.generate_scene(f_state)
+		if f_root:
+			var b_node: MeshInstance3D = f_root.find_child("Bush_1_E_Color1", true, false) as MeshInstance3D
+			if b_node and b_node.mesh:
+				_plant_shrub_mesh = b_node.mesh
+				if b_node.mesh.get_surface_count() > 0:
+					_plant_shrub_mat = b_node.mesh.surface_get_material(0)
+
+			var g_node: MeshInstance3D = f_root.find_child("Grass_2_D_Color1", true, false) as MeshInstance3D
+			if g_node and g_node.mesh:
+				_plant_grass_mesh = g_node.mesh
+				if g_node.mesh.get_surface_count() > 0:
+					_plant_grass_mat = g_node.mesh.surface_get_material(0)
+			f_root.free()
+
+static func _load_gltf_packed(path: String) -> PackedScene:
+	var gltf: GLTFDocument = GLTFDocument.new()
+	var state: GLTFState = GLTFState.new()
+	var err: Error = gltf.append_from_file(path, state)
+	if err != OK:
+		return null
+	var root: Node = gltf.generate_scene(state)
+	if not root:
+		return null
+	_set_owner_recursive(root, root)
+	var packed: PackedScene = PackedScene.new()
+	var pack_err: Error = packed.pack(root)
+	root.free()
+	return packed if pack_err == OK else null
+
+static func _set_owner_recursive(node: Node, owner: Node) -> void:
+	for c in node.get_children():
+		c.owner = owner
+		_set_owner_recursive(c, owner)
 
 func _init_shared_resources() -> void:
-	# Herbivore resources
+	# Fallback herbivore resources
 	_mesh_herb_body = BoxMesh.new()
 	_mesh_herb_body.size = Vector3(0.7, 0.6, 1.2)
 	_mat_herb_body = StandardMaterial3D.new()
@@ -56,7 +120,7 @@ func _init_shared_resources() -> void:
 	_mat_herb_horn = StandardMaterial3D.new()
 	_mat_herb_horn.albedo_color = Color(0.85, 0.82, 0.72)
 
-	# Predator resources
+	# Fallback predator resources
 	_mesh_pred_body = BoxMesh.new()
 	_mesh_pred_body.size = Vector3(0.65, 0.55, 1.4)
 	_mat_pred_body = StandardMaterial3D.new()
@@ -77,7 +141,7 @@ func _init_shared_resources() -> void:
 	_mat_pred_eye.emission = Color(1.0, 0.6, 0.1)
 	_mat_pred_eye.emission_energy_multiplier = 2.0
 
-	# Flora resources
+	# Fallback flora resources
 	_mesh_shrub = SphereMesh.new()
 	_mesh_shrub.radius = 0.5
 	_mesh_shrub.height = 0.8
@@ -111,11 +175,6 @@ func _init_shared_resources() -> void:
 	_selection_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_selection_marker.visible = false
 	add_child(_selection_marker)
-
-var _mesh_select_ring: TorusMesh
-var _mat_select_ring: StandardMaterial3D
-var _selection_marker: MeshInstance3D
-var inspected_entity_id: int = -1
 
 func set_inspected_entity(id: int) -> void:
 	inspected_entity_id = id
@@ -159,6 +218,12 @@ func _update_selection_marker(delta: float) -> void:
 	else:
 		_selection_marker.visible = false
 
+func _play_anim(anim: AnimationPlayer, anim_name: String, blend_time: float = 0.2) -> void:
+	if not anim or anim.current_animation == anim_name:
+		return
+	if anim.has_animation(anim_name):
+		anim.play(anim_name, blend_time)
+
 func _update_herbivores(delta: float) -> void:
 	var active_herbivores: Array = _coordinator.fauna_sim.get_all_herbivores()
 	var active_ids: Dictionary = {}
@@ -167,63 +232,52 @@ func _update_herbivores(delta: float) -> void:
 		active_ids[h.id] = true
 		var node: Node3D = _herbivore_nodes.get(h.id, null)
 		if node == null:
-			node = _create_herbivore_mesh(h.genome)
+			node = _create_herbivore_mesh(h.genome, h.id)
 			add_child(node)
 			_herbivore_nodes[h.id] = node
 			node.position = h.position
 
-
 		var target_pos: Vector3 = h.position
-		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
-		var is_moving: bool = h.velocity.length_squared() > 0.1
-		var hop: float = 0.0
+		var is_moving: bool = h.velocity.length_squared() > 0.05
+		var anim: AnimationPlayer = node.get_meta("anim_player", null) as AnimationPlayer
 
-		# Dynamic behavior animation reflecting simulation state
-		match h.state:
-			FaunaSimulation.HerbivoreState.RESTING:
-				target_pos.y -= 0.18
-				target_pos.y += sin(_anim_time * 2.5) * 0.02
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.62, clampf(delta * 8.0, 0.0, 1.0))
-					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(15.0), clampf(delta * 8.0, 0.0, 1.0))
-			FaunaSimulation.HerbivoreState.EATING:
-				target_pos.y -= 0.04
-				if head_node:
-					var chew_bob: float = sin(_anim_time * 12.0) * 0.03
-					head_node.position.y = lerpf(head_node.position.y, 0.45 + chew_bob, clampf(delta * 10.0, 0.0, 1.0))
+		# Authentic animation state machine mapped to biological simulation state
+		if anim:
+			match h.state:
+				FaunaSimulation.HerbivoreState.RESTING:
+					_play_anim(anim, "Idle_Headlow", 0.35)
+				FaunaSimulation.HerbivoreState.EATING:
+					_play_anim(anim, "Eating", 0.20)
+				FaunaSimulation.HerbivoreState.FLEEING:
+					_play_anim(anim, "Gallop", 0.15)
+				FaunaSimulation.HerbivoreState.STARVING:
+					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
+				_: # WANDERING, FORAGING
+					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
+		else:
+			# Fallback bobbing if using primitive models
+			var head_node: Node3D = node.get_node_or_null("Head") as Node3D
+			if head_node:
+				if h.state == FaunaSimulation.HerbivoreState.EATING:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(32.0), clampf(delta * 10.0, 0.0, 1.0))
-			FaunaSimulation.HerbivoreState.FLEEING:
-				hop = absf(sin(_anim_time * 16.0)) * 0.22 if is_moving else 0.0
-				target_pos.y += hop
-				node.rotation.x = lerp_angle(node.rotation.x, deg_to_rad(10.0), clampf(delta * 10.0, 0.0, 1.0))
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.85, clampf(delta * 10.0, 0.0, 1.0))
-					head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, clampf(delta * 10.0, 0.0, 1.0))
-			FaunaSimulation.HerbivoreState.STARVING:
-				target_pos.x += sin(_anim_time * 26.0) * 0.03
-				target_pos.y -= 0.08
-				hop = absf(sin(_anim_time * 4.0)) * 0.06 if is_moving else 0.0
-				target_pos.y += hop
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.58, clampf(delta * 6.0, 0.0, 1.0))
-					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(20.0), clampf(delta * 6.0, 0.0, 1.0))
-			_: # WANDERING, FORAGING
-				hop = absf(sin(_anim_time * 8.0)) * 0.14 if is_moving else 0.0
-				target_pos.y += hop
-				node.rotation.x = lerp_angle(node.rotation.x, 0.0, clampf(delta * 8.0, 0.0, 1.0))
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.85, clampf(delta * 8.0, 0.0, 1.0))
+				else:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, clampf(delta * 8.0, 0.0, 1.0))
 
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
 
+		# Smooth natural rotation toward travel direction
 		if is_moving:
-			var target_rot_y: float = -h.heading + PI * 0.5
-			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 10.0, 0.0, 1.0))
+			var target_rot_y: float = atan2(h.velocity.x, h.velocity.z)
+			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
 
-		var target_scale: float = 0.6 if h.life_stage == FaunaSimulation.LifeStage.JUVENILE else 1.0
-		if not is_equal_approx(node.scale.x, target_scale):
-			node.scale = Vector3(target_scale, target_scale, target_scale)
+		# Phenotypic trait scale
+		var base_scale: float = 0.58 if (h.id % 2 == 0) else 0.52
+		var life_mult: float = 0.55 if h.life_stage == FaunaSimulation.LifeStage.JUVENILE else 1.0
+		var trait_mult: float = h.genome.size_scale if h.genome else 1.0
+		var final_scale: float = base_scale * life_mult * trait_mult
+
+		if not is_equal_approx(node.scale.x, final_scale):
+			node.scale = Vector3(final_scale, final_scale, final_scale)
 
 	for id: int in _herbivore_nodes.keys():
 		if not active_ids.has(id):
@@ -238,44 +292,48 @@ func _update_predators(delta: float) -> void:
 		active_ids[p.id] = true
 		var node: Node3D = _predator_nodes.get(p.id, null)
 		if node == null:
-			node = _create_predator_mesh(p.genome)
+			node = _create_predator_mesh(p.genome, p.id)
 			add_child(node)
 			_predator_nodes[p.id] = node
 			node.position = p.position
 
-
 		var target_pos: Vector3 = p.position
-		var head_node: Node3D = node.get_node_or_null("Head") as Node3D
-		var is_moving: bool = p.velocity.length_squared() > 0.1
-		var prowl_bob: float = 0.0
+		var is_moving: bool = p.velocity.length_squared() > 0.05
+		var anim: AnimationPlayer = node.get_meta("anim_player", null) as AnimationPlayer
 
-		match p.state:
-			FaunaSimulation.PredatorState.RESTING:
-				target_pos.y -= 0.18
-				target_pos.y += sin(_anim_time * 2.2) * 0.015
-			FaunaSimulation.PredatorState.EATING:
-				target_pos.y -= 0.08
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.40, clampf(delta * 10.0, 0.0, 1.0))
-			FaunaSimulation.PredatorState.HUNTING:
-				target_pos.y -= 0.10
-				prowl_bob = absf(sin(_anim_time * 14.0)) * 0.14 if is_moving else 0.0
-				target_pos.y += prowl_bob
-			FaunaSimulation.PredatorState.STARVING:
-				target_pos.x += sin(_anim_time * 24.0) * 0.03
-				prowl_bob = absf(sin(_anim_time * 4.0)) * 0.04 if is_moving else 0.0
-				target_pos.y += prowl_bob
-			_: # WANDERING
-				prowl_bob = absf(sin(_anim_time * 6.0)) * 0.08 if is_moving else 0.0
-				target_pos.y += prowl_bob
-				if head_node:
-					head_node.position.y = lerpf(head_node.position.y, 0.60, clampf(delta * 8.0, 0.0, 1.0))
+		# Authentic predator animation state machine
+		if anim:
+			match p.state:
+				FaunaSimulation.PredatorState.RESTING:
+					_play_anim(anim, "Idle_2_HeadLow", 0.35)
+				FaunaSimulation.PredatorState.EATING:
+					_play_anim(anim, "Eating", 0.20)
+				FaunaSimulation.PredatorState.HUNTING:
+					_play_anim(anim, "Gallop", 0.15)
+				FaunaSimulation.PredatorState.STARVING:
+					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
+				_: # WANDERING
+					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
+		else:
+			var head_node: Node3D = node.get_node_or_null("Head") as Node3D
+			if head_node:
+				if p.state == FaunaSimulation.PredatorState.EATING:
+					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-60.0), clampf(delta * 10.0, 0.0, 1.0))
+				else:
+					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-90.0), clampf(delta * 8.0, 0.0, 1.0))
 
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
 
 		if is_moving:
-			var target_rot_y: float = -p.heading + PI * 0.5
-			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 10.0, 0.0, 1.0))
+			var target_rot_y: float = atan2(p.velocity.x, p.velocity.z)
+			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
+
+		var base_scale: float = 0.46
+		var trait_mult: float = p.genome.size_scale if p.genome else 1.0
+		var final_scale: float = base_scale * trait_mult
+
+		if not is_equal_approx(node.scale.x, final_scale):
+			node.scale = Vector3(final_scale, final_scale, final_scale)
 
 	for id: int in _predator_nodes.keys():
 		if not active_ids.has(id):
@@ -295,7 +353,6 @@ func _update_plants() -> void:
 			_plant_nodes[pl.id] = node
 			node.position = pl.position
 
-
 		var target_scale: float = 0.4 + (pl.biomass / pl.max_biomass) * 0.8
 		if absf(node.scale.x - target_scale) > 0.02:
 			node.scale = Vector3(target_scale, target_scale, target_scale)
@@ -305,32 +362,60 @@ func _update_plants() -> void:
 			_plant_nodes[id].queue_free()
 			_plant_nodes.erase(id)
 
-## Low-poly stylized herbivore model using shared meshes and materials
-func _create_herbivore_mesh(genome: EcosystemGenome = null) -> Node3D:
+## High-fidelity rigged herbivore (Stag / Deer) with Skeletal Mesh & Locomotion Animations
+func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -> Node3D:
 	var root: Node3D = Node3D.new()
-	root.name = "HerbivoreView"
+	root.name = "HerbivoreView_" + str(entity_id)
 
+	# Compatibility node
+	var dummy_head: Node3D = Node3D.new()
+	dummy_head.name = "Head"
+	root.add_child(dummy_head)
+
+	# Select model variation: Stag (Male with horns) or Deer (Female doe)
+	var scene_to_inst: PackedScene = _stag_scene if (entity_id % 2 == 0 and _stag_scene != null) else _deer_scene
+	if scene_to_inst == null and _stag_scene != null:
+		scene_to_inst = _stag_scene
+
+	if scene_to_inst != null:
+		var model_inst: Node3D = scene_to_inst.instantiate() as Node3D
+		var anim: AnimationPlayer = model_inst.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if anim:
+			root.set_meta("anim_player", anim)
+			anim.play("Idle")
+
+		# Apply phenotype coat tint if inherited
+		if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
+			var mesh_node: MeshInstance3D = model_inst.find_child("Stag", true, false) as MeshInstance3D
+			if mesh_node == null:
+				mesh_node = model_inst.find_child("Deer", true, false) as MeshInstance3D
+			if mesh_node and mesh_node.mesh and mesh_node.mesh.get_surface_count() > 0:
+				var m = mesh_node.mesh.surface_get_material(0)
+				if m is StandardMaterial3D:
+					var custom_mat: StandardMaterial3D = m.duplicate()
+					custom_mat.albedo_color = genome.coat_tint
+					mesh_node.material_override = custom_mat
+
+		root.add_child(model_inst)
+		var base_scale: float = 0.58 if (entity_id % 2 == 0) else 0.52
+		if genome:
+			root.scale = Vector3.ONE * (base_scale * genome.size_scale)
+		else:
+			root.scale = Vector3.ONE * base_scale
+		return root
+
+	# Fallback primitive model
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_herb_body
-	if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
-		var custom_mat: StandardMaterial3D = _mat_herb_body.duplicate()
-		custom_mat.albedo_color = genome.coat_tint
-		body_inst.material_override = custom_mat
-	else:
-		body_inst.material_override = _mat_herb_body
+	body_inst.material_override = _mat_herb_body
 	body_inst.position = Vector3(0.0, 0.5, 0.0)
 	root.add_child(body_inst)
 
 	var head_inst: MeshInstance3D = MeshInstance3D.new()
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_herb_head
-	if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
-		var custom_hmat: StandardMaterial3D = _mat_herb_head.duplicate()
-		custom_hmat.albedo_color = genome.coat_tint.darkened(0.12)
-		head_inst.material_override = custom_hmat
-	else:
-		head_inst.material_override = _mat_herb_head
+	head_inst.material_override = _mat_herb_head
 	head_inst.position = Vector3(0.0, 0.85, 0.5)
 	root.add_child(head_inst)
 
@@ -355,20 +440,44 @@ func _create_herbivore_mesh(genome: EcosystemGenome = null) -> Node3D:
 
 	return root
 
-## Low-poly stylized predator model using shared meshes and materials
-func _create_predator_mesh(genome: EcosystemGenome = null) -> Node3D:
+## High-fidelity rigged predator (Wolf) with Skeletal Mesh & Locomotion Animations
+func _create_predator_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -> Node3D:
 	var root: Node3D = Node3D.new()
-	root.name = "PredatorView"
+	root.name = "PredatorView_" + str(entity_id)
 
+	var dummy_head: Node3D = Node3D.new()
+	dummy_head.name = "Head"
+	root.add_child(dummy_head)
+
+	if _wolf_scene != null:
+		var model_inst: Node3D = _wolf_scene.instantiate() as Node3D
+		var anim: AnimationPlayer = model_inst.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if anim:
+			root.set_meta("anim_player", anim)
+			anim.play("Idle")
+
+		if genome and genome.coat_tint != Color(0.15, 0.15, 0.16):
+			var mesh_node: MeshInstance3D = model_inst.find_child("Wolf", true, false) as MeshInstance3D
+			if mesh_node and mesh_node.mesh and mesh_node.mesh.get_surface_count() > 0:
+				var m = mesh_node.mesh.surface_get_material(0)
+				if m is StandardMaterial3D:
+					var custom_mat: StandardMaterial3D = m.duplicate()
+					custom_mat.albedo_color = genome.coat_tint
+					mesh_node.material_override = custom_mat
+
+		root.add_child(model_inst)
+		var base_scale: float = 0.46
+		if genome:
+			root.scale = Vector3.ONE * (base_scale * genome.size_scale)
+		else:
+			root.scale = Vector3.ONE * base_scale
+		return root
+
+	# Fallback primitive model
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_pred_body
-	if genome and genome.coat_tint != Color(0.15, 0.15, 0.16):
-		var custom_mat: StandardMaterial3D = _mat_pred_body.duplicate()
-		custom_mat.albedo_color = genome.coat_tint
-		body_inst.material_override = custom_mat
-	else:
-		body_inst.material_override = _mat_pred_body
+	body_inst.material_override = _mat_pred_body
 	body_inst.position = Vector3(0.0, 0.45, 0.0)
 	root.add_child(body_inst)
 
@@ -397,38 +506,40 @@ func _create_predator_mesh(genome: EcosystemGenome = null) -> Node3D:
 
 	return root
 
-## Stylized plant mesh using shared meshes, materials, and selective shadow casting
+## High-fidelity plant mesh using natural foliage models
 func _create_plant_mesh(species: String, genome: EcosystemGenome = null) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "PlantView_" + species
 
 	var inst: MeshInstance3D = MeshInstance3D.new()
+
 	if species == "shrub_bush":
-		inst.mesh = _mesh_shrub
-		if genome and genome.foliage_tint != Color(0.28, 0.62, 0.30):
-			var custom_mat: StandardMaterial3D = _mat_shrub.duplicate()
-			custom_mat.albedo_color = genome.foliage_tint
-			inst.material_override = custom_mat
+		if _plant_shrub_mesh:
+			inst.mesh = _plant_shrub_mesh
+			if _plant_shrub_mat:
+				inst.material_override = _plant_shrub_mat
+			inst.scale = Vector3.ONE * 0.85
 		else:
+			inst.mesh = _mesh_shrub
 			inst.material_override = _mat_shrub
-		inst.position = Vector3(0.0, _mesh_shrub.height * 0.5, 0.0)
+			inst.position = Vector3(0.0, _mesh_shrub.height * 0.5, 0.0)
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	else:
-		inst.mesh = _mesh_grass
-		if genome and genome.foliage_tint != Color(0.38, 0.78, 0.32):
-			var custom_mat: StandardMaterial3D = _mat_grass.duplicate()
-			custom_mat.albedo_color = genome.foliage_tint
-			inst.material_override = custom_mat
+		if _plant_grass_mesh:
+			inst.mesh = _plant_grass_mesh
+			if _plant_grass_mat:
+				inst.material_override = _plant_grass_mat
+			inst.scale = Vector3.ONE * 0.7
 		else:
+			inst.mesh = _mesh_grass
 			inst.material_override = _mat_grass
-		inst.position = Vector3(0.0, _mesh_grass.height * 0.5, 0.0)
+			inst.position = Vector3(0.0, _mesh_grass.height * 0.5, 0.0)
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	root.add_child(inst)
 	if genome:
 		root.scale = Vector3.ONE * genome.size_scale
 	return root
-
 
 func clear() -> void:
 	for node: Node3D in _herbivore_nodes.values():

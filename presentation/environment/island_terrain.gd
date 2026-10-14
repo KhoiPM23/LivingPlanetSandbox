@@ -9,12 +9,17 @@ extends StaticBody3D
 @export var water_level: float = 0.0
 @export var roughness: float = 0.5
 
+class TerrainMaterialWrapper extends ShaderMaterial:
+	var roughness: float = 0.85
+	var metallic_specular: float = 0.10
+	var albedo_color: Color = Color.WHITE
+
 var _mesh_instance: MeshInstance3D
 var _collision_shape: CollisionShape3D
 var _seed_val: int = 0
 var _noise: FastNoiseLite
 var _env_grid: EnvironmentalGrid
-var _terrain_material: StandardMaterial3D = null
+var _terrain_material: Variant = null
 
 # --- SURFACE REACTION & WETNESS ---
 var surface_wetness: float = 0.0 # 0.0 = bone dry, 1.0 = saturated wet sheen
@@ -125,11 +130,20 @@ func _build_terrain_mesh() -> void:
 
 	var array_mesh: ArrayMesh = st.commit()
 
-	# Material with vertex color blending
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
+	# Material with PBR Triplanar Slope Blending & Biome vertex modulation
+	var shader: Shader = load("res://presentation/shaders/terrain_pbr.gdshader")
+	var mat: TerrainMaterialWrapper = TerrainMaterialWrapper.new()
+	mat.shader = shader
+	mat.set_shader_parameter("ground_albedo", load("res://demo/assets/textures/ground037_alb_ht.png"))
+	mat.set_shader_parameter("ground_normal", load("res://demo/assets/textures/ground037_nrm_rgh.png"))
+	mat.set_shader_parameter("rock_albedo", load("res://demo/assets/textures/rock023_alb_ht.png"))
+	mat.set_shader_parameter("rock_normal", load("res://demo/assets/textures/rock023_nrm_rgh.png"))
+	mat.set_shader_parameter("uv_scale", 0.16)
+	mat.set_shader_parameter("rock_uv_scale", 0.12)
+	mat.set_shader_parameter("slope_threshold", 0.36)
+	mat.set_shader_parameter("slope_blend", 0.16)
 	mat.roughness = 0.85
-	mat.metallic_specular = 0.1
+	mat.metallic_specular = 0.10
 	_terrain_material = mat
 	_apply_surface_material_properties()
 
@@ -188,6 +202,9 @@ func _apply_surface_material_properties(weather: WeatherSystem = null) -> void:
 		_terrain_material.albedo_color = Color(1.04, 1.02, 0.96)
 	else:
 		_terrain_material.albedo_color = Color(damp_factor, damp_factor, damp_factor)
+
+	if _terrain_material is ShaderMaterial:
+		_terrain_material.set_shader_parameter("wetness", surface_wetness)
 
 func _add_terrain_vertex(st: SurfaceTool, pos: Vector3) -> void:
 	var h: float = pos.y
