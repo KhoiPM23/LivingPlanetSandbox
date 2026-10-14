@@ -1,22 +1,25 @@
 class_name TestGraphicsAndEvolutionTelemetry
 extends RefCounted
 
-## Automated contract verification for Graphics Scalability Presets (Low, Balanced, High)
-## and Evolutionary Diversity Telemetry (Allele drift, variance, bottleneck warnings).
+## Automated contract verification for Graphics Scalability Presets (Low, Balanced, Cinematic)
+## and Evolutionary Diversity Telemetry (Allele drift, variance, bottleneck warnings, species channels).
 
 func run_all_tests() -> Dictionary:
 	var results: Dictionary = {
-		"total": 5,
+		"total": 8,
 		"passed": 0,
 		"failed": 0,
 		"errors": []
 	}
 
 	_run_test("test_graphics_presets_switching_and_parameters", Callable(self, "test_graphics_presets_switching_and_parameters"), results)
+	_run_test("test_cinematic_preset_switching_and_msaa", Callable(self, "test_cinematic_preset_switching_and_msaa"), results)
 	_run_test("test_graphics_preset_config_persistence", Callable(self, "test_graphics_preset_config_persistence"), results)
 	_run_test("test_evolution_telemetry_variance_and_diversity", Callable(self, "test_evolution_telemetry_variance_and_diversity"), results)
 	_run_test("test_evolution_snapshot_recording", Callable(self, "test_evolution_snapshot_recording"), results)
 	_run_test("test_iris_xe_balanced_workload_bounds", Callable(self, "test_iris_xe_balanced_workload_bounds"), results)
+	_run_test("test_chart_multi_channel_and_empty_population_handling", Callable(self, "test_chart_multi_channel_and_empty_population_handling"), results)
+	_run_test("test_species_trait_telemetry_isolation_and_demographics", Callable(self, "test_species_trait_telemetry_isolation_and_demographics"), results)
 
 	return results
 
@@ -63,6 +66,9 @@ func test_graphics_presets_switching_and_parameters() -> bool:
 	if env_node.environment.glow_enabled != false:
 		root.free()
 		return false
+	if env_node.environment.fog_enabled != false:
+		root.free()
+		return false
 	if low_changes.get("scaling_3d_scale", 1.0) != 0.75:
 		root.free()
 		return false
@@ -75,16 +81,54 @@ func test_graphics_presets_switching_and_parameters() -> bool:
 	if env_node.environment.glow_enabled != true:
 		root.free()
 		return false
+	if env_node.environment.fog_enabled != true:
+		root.free()
+		return false
 	if bal_changes.get("scaling_3d_scale", 1.0) != 0.85:
 		root.free()
 		return false
 
-	# 3. Test High Preset
+	# 3. Test High / Cinematic Preset
 	var high_changes: Dictionary = GraphicsPresets.apply_preset(GraphicsPresets.Preset.HIGH, root)
 	if sun.shadow_enabled != true:
 		root.free()
 		return false
+	if env_node.environment.fog_enabled != true:
+		root.free()
+		return false
 	if high_changes.get("scaling_3d_scale", 0.0) != 1.0:
+		root.free()
+		return false
+
+	root.free()
+	return true
+
+func test_cinematic_preset_switching_and_msaa() -> bool:
+	var root: Node3D = Node3D.new()
+
+	var sun: DirectionalLight3D = DirectionalLight3D.new()
+	sun.name = "DirectionalLight3D"
+	root.add_child(sun)
+
+	var env_node: WorldEnvironment = WorldEnvironment.new()
+	env_node.name = "WorldEnvironment"
+	env_node.environment = Environment.new()
+	root.add_child(env_node)
+
+	var changes: Dictionary = GraphicsPresets.apply_preset(GraphicsPresets.Preset.CINEMATIC, root)
+	if changes.get("scaling_3d_scale", 0.0) != 1.0:
+		root.free()
+		return false
+	if changes.get("msaa_3d", Viewport.MSAA_DISABLED) != Viewport.MSAA_2X:
+		root.free()
+		return false
+	if changes.get("shadow_enabled", false) != true:
+		root.free()
+		return false
+	if changes.get("fog_enabled", false) != true:
+		root.free()
+		return false
+	if sun.directional_shadow_max_distance < 100.0:
 		root.free()
 		return false
 
@@ -102,10 +146,10 @@ func test_graphics_preset_config_persistence() -> bool:
 	if loaded != GraphicsPresets.Preset.LOW:
 		return false
 
-	# Test High preset save
-	GraphicsPresets.save_to_config(GraphicsPresets.Preset.HIGH, test_path)
-	var loaded_high: GraphicsPresets.Preset = GraphicsPresets.load_from_config(test_path)
-	if loaded_high != GraphicsPresets.Preset.HIGH:
+	# Test Cinematic preset save
+	GraphicsPresets.save_to_config(GraphicsPresets.Preset.CINEMATIC, test_path)
+	var loaded_cinematic: GraphicsPresets.Preset = GraphicsPresets.load_from_config(test_path)
+	if loaded_cinematic != GraphicsPresets.Preset.CINEMATIC:
 		return false
 
 	# Clean up
@@ -193,6 +237,97 @@ func test_iris_xe_balanced_workload_bounds() -> bool:
 
 	var low_desc: String = GraphicsPresets.get_preset_description(GraphicsPresets.Preset.LOW)
 	if not low_desc.contains("75%"):
+		return false
+
+	return true
+
+func test_chart_multi_channel_and_empty_population_handling() -> bool:
+	var chart: EcosystemChart = EcosystemChart.new()
+	chart.size = Vector2(300, 150)
+
+	# 1. Mode cycling
+	if chart.current_mode != EcosystemChart.ChartMode.POPULATION:
+		chart.free()
+		return false
+
+	var mode2: EcosystemChart.ChartMode = chart.cycle_mode()
+	if mode2 != EcosystemChart.ChartMode.TRAIT_MEANS:
+		chart.free()
+		return false
+
+	var mode3: EcosystemChart.ChartMode = chart.cycle_mode()
+	if mode3 != EcosystemChart.ChartMode.DISPERSION_DEMOGRAPHICS:
+		chart.free()
+		return false
+
+	var mode_back: EcosystemChart.ChartMode = chart.cycle_mode()
+	if mode_back != EcosystemChart.ChartMode.POPULATION:
+		chart.free()
+		return false
+
+	# 2. Empty population safety (Extinct/Zero population)
+	var empty_samples: Array = [
+		{"biomass": 0.0, "herbivores": 0, "predators": 0, "avg_speed": 0.0, "pred_avg_speed": 0.0, "speed_var": 0.0},
+		{"biomass": 0.0, "herbivores": 0, "predators": 0, "avg_speed": 0.0, "pred_avg_speed": 0.0, "speed_var": 0.0}
+	]
+	chart.update_history(empty_samples)
+	chart.set_chart_mode(EcosystemChart.ChartMode.POPULATION)
+	if not chart.get_mode_name().contains("Populations"):
+		chart.free()
+		return false
+
+	chart.set_chart_mode(EcosystemChart.ChartMode.TRAIT_MEANS)
+	if not chart.get_mode_name().contains("Trait Means"):
+		chart.free()
+		return false
+
+	chart.set_chart_mode(EcosystemChart.ChartMode.DISPERSION_DEMOGRAPHICS)
+	if not chart.get_mode_name().contains("Dispersion"):
+		chart.free()
+		return false
+
+	chart.free()
+	return true
+
+func test_species_trait_telemetry_isolation_and_demographics() -> bool:
+	var metrics: EcosystemMetrics = EcosystemMetrics.new()
+	metrics.total_biomass = 45.2
+	metrics.plant_count = 50
+	metrics.herbivore_count = 12
+	metrics.predator_count = 3
+	metrics.avg_herbivore_speed = 1.18
+	metrics.avg_herbivore_size = 1.05
+	metrics.avg_herbivore_energy_efficiency = 1.10
+	metrics.avg_predator_speed = 1.25
+	metrics.avg_predator_size = 1.30
+	metrics.avg_predator_energy_efficiency = 0.95
+	metrics.allele_speed_variance = 0.035
+	metrics.allele_size_variance = 0.022
+	metrics.allele_efficiency_variance = 0.015
+	metrics.survival_rate_herbivore = 0.88
+	metrics.survival_rate_predator = 0.67
+	metrics.births_total = 14
+	metrics.deaths_total = 2
+
+	metrics.sample_history()
+
+	if metrics.history.size() != 1:
+		return false
+
+	var sample: Dictionary = metrics.history[0]
+	if absf(float(sample.get("pred_avg_speed", 0.0)) - 1.25) > 0.01:
+		return false
+	if absf(float(sample.get("avg_speed", 0.0)) - 1.18) > 0.01:
+		return false
+	if absf(float(sample.get("pred_avg_eff", 0.0)) - 0.95) > 0.01:
+		return false
+	if absf(float(sample.get("avg_eff", 0.0)) - 1.10) > 0.01:
+		return false
+	if absf(float(sample.get("speed_var", 0.0)) - 0.035) > 0.005:
+		return false
+	if int(sample.get("births_total", 0)) != 14:
+		return false
+	if int(sample.get("deaths_total", 0)) != 2:
 		return false
 
 	return true

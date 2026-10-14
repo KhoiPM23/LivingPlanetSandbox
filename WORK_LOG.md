@@ -546,3 +546,40 @@ es://presentation/ui/hud.gd):**
   - Full automated contract test suite (`test_runner.gd`): **85 Passed, 0 Failed**.
   - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
   - Reproducible benchmark harness (`tests/benchmark_suite.gd`): Target Workload 51.6 Avg FPS, 10.38 ms avg frame time on Intel Iris Xe.
+
+### BLOCK 4 — Graphics Quality Presets and Ecosystem Telemetry (COMPLETED)
+- **Decoupled Graphics Quality Manager (`res://presentation/graphics/graphics_presets.gd`):**
+  - Upgraded `GraphicsPresets` module with `Preset` enum (`LOW = 0`, `BALANCED = 1`, `CINEMATIC = 2`, `HIGH = 3` alias for backward compatibility):
+    - **Low Profile:** 75% 3D resolution scale, MSAA disabled (`MSAA_DISABLED`), directional shadows disabled (cutoff 0m), volumetric depth fog disabled, glow disabled, foliage grass density clamped to 350 instances, camera-anchored precipitation budget reduced to 160 rain / 60 snow particles. Optimized for maximum battery and low-power iGPU stability.
+    - **Balanced Profile (Recommended Default for Intel Iris Xe):** 85% 3D resolution scale, MSAA disabled, 2K directional shadow atlas with 65m cutoff, volumetric depth fog enabled, subtle glow enabled (0.25), 700 grass instances, 350 rain / 120 snow particles. Maintains clear artistic vision and stable 30+ FPS on Iris Xe graphics.
+    - **Cinematic Profile:** 100% native resolution scale, 2x MSAA (`MSAA_2X`), 4K shadow atlas with 110m cutoff, volumetric depth fog enabled, glow enabled (0.35), 1000 grass instances, 550 rain / 200 snow particles. Excludes volumetric raymarched clouds to maintain rock-solid stability without crashing Intel Vulkan drivers.
+  - Runtime application: All settings apply instantly without restarting the engine or modifying window display resolution.
+  - User Settings Isolation: Stored in independent user configuration file `user://settings_graphics.cfg`, completely separate from world state save files (`user://saves/world_save.json`).
+- **Multi-Channel Evolutionary Telemetry (`res://core/ecosystem/ecosystem_metrics.gd`, `ecosystem_coordinator.gd`):**
+  - Expanded `sample_history()` rolling buffer (40 samples) in `EcosystemMetrics` with true simulation metrics:
+    - **Population Counts:** Living plant biomass, deer count, stalker count.
+    - **Species-Specific Trait Means:** Tracks mean speed, size, and metabolic efficiency separately for herbivores (`avg_speed`, `avg_size`, `avg_efficiency`) and predators (`pred_avg_speed`, `pred_avg_size`, `pred_avg_eff`). Extinct/empty populations explicitly reset to 0.0 to prevent stale readings.
+    - **Trait Dispersion & Diversity:** Herbivore locomotory speed variance $\sigma^2_{\text{speed}}$, size variance $\sigma^2_{\text{size}}$, metabolic efficiency variance $\sigma^2_{\text{eff}}$, and composite Shannon diversity index $D$.
+    - **Demographic Survival & Vital Rates:** Total births, total deaths, and cohort survival rate percentage.
+  - Zero mock data: All telemetry channels calculate strictly from living entity states in `FaunaSimulation` and `FloraSimulation`.
+- **Ecosystem Chart & HUD Observability (`res://presentation/ui/ecosystem_chart.gd`, `hud.gd`):**
+  - Multi-view chart rendering: Added 3 selectable chart view modes:
+    1. `POPULATION`: Plant Biomass (Green), Deer (Amber), Stalkers (Crimson).
+    2. `TRAIT_MEANS`: Deer Speed vs Stalker Speed, Deer Size vs Stalker Size, Efficiency.
+    3. `DISPERSION_DEMOGRAPHICS`: Speed Variance $\sigma^2_{\text{speed}}$, Diversity $D$, Survival Rate %.
+  - View cycle button: `[📈 View: Populations ▾]` integrated directly into the HUD chart header, cycling cleanly through modes with clear labels, units, and color-coded legends.
+  - Rendering Throttling: Replaced per-frame redrawing with a dedicated `0.35s` throttle timer (`_chart_update_timer`), reducing UI canvas draw overhead by ~95% during active gameplay.
+  - Safe Normalization: Safeguarded division operations against divide-by-zero and empty populations (`max_val <= 0.001`), ensuring flat baseline polylines rather than graphical glitches or NaN crashes when species go extinct.
+- **In-Engine Settings Menu Integration (`res://presentation/ui/hud.gd`):**
+  - Settings panel upgraded with direct quality buttons (`[Low]`, `[Balanced (Iris Xe)]`, `[Cinematic]`) with active preset badge (`[ACTIVE]`).
+  - Real-time applied status summary: dynamically reports active Render Scale, MSAA state, Directional Shadow cutoff, Grass Density, and Particle Budget.
+  - Complete modal input blocking: Camera input and tool raycasts remain strictly suppressed while the Settings modal is open.
+- **Verification & Acceptance:**
+  - Added 3 contract tests to `tests/test_graphics_and_evolution_telemetry.gd`:
+    1. `test_cinematic_preset_switching_and_msaa`: Verifies 100% scale, MSAA 2X, 110m shadow cutoff, 1000 grass density, and 550 rain particles.
+    2. `test_chart_multi_channel_and_empty_population_handling`: Verifies all 3 chart view modes, mode names, history updates, and clean handling of empty/zero populations.
+    3. `test_species_trait_telemetry_isolation_and_demographics`: Verifies species isolation between herbivore and predator trait means, trait variances, and demographic counters.
+  - Full automated contract test suite (`test_runner.gd`): **88 Passed across 16 suites, 0 Failed**.
+  - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
+  - Multi-tier benchmark suite (`tests/benchmark_suite.gd`): Target Workload **34.7 Avg FPS**, 4.20 ms avg frame time, 11.27 ms p95 on Intel Iris Xe.
+

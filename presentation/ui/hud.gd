@@ -32,6 +32,10 @@ var _right_panel: PanelContainer
 var _tab_container: TabContainer
 var _telemetry_label: Label
 var _chart: EcosystemChart
+var _chart_title_lbl: Label
+var _chart_mode_btn: Button
+var _chart_update_timer: float = 0.0
+const CHART_UPDATE_INTERVAL: float = 0.35
 
 # Inspector Card
 var _inspector_vbox: VBoxContainer
@@ -63,6 +67,11 @@ var _flight_label: Label
 var _fog_btn: Button
 var _screen_mode_btn: Button
 var _preset_btn: Button
+var _btn_preset_low: Button
+var _btn_preset_balanced: Button
+var _btn_preset_cinematic: Button
+var _preset_desc_lbl: Label
+var _preset_status_lbl: Label
 
 # Camera & Exploration
 var _compass_label: Label
@@ -366,11 +375,20 @@ func _build_right_observability_panel() -> void:
 	_telemetry_label.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
 	tab_telemetry.add_child(_telemetry_label)
 
-	var chart_title: Label = Label.new()
-	chart_title.text = "POPULATION & BIOMASS TREND"
-	chart_title.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
-	chart_title.add_theme_font_size_override("font_size", 10)
-	tab_telemetry.add_child(chart_title)
+	var chart_hdr: HBoxContainer = HBoxContainer.new()
+	_chart_title_lbl = Label.new()
+	_chart_title_lbl.text = "POPULATION & BIOMASS DYNAMICS"
+	_chart_title_lbl.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
+	_chart_title_lbl.add_theme_font_size_override("font_size", 10)
+	chart_hdr.add_child(_chart_title_lbl)
+	chart_hdr.add_child(_create_spacer())
+
+	_chart_mode_btn = Button.new()
+	_chart_mode_btn.text = "Populations ▾"
+	_chart_mode_btn.add_theme_font_size_override("font_size", 9)
+	_chart_mode_btn.pressed.connect(_on_cycle_chart_mode)
+	chart_hdr.add_child(_chart_mode_btn)
+	tab_telemetry.add_child(chart_hdr)
 
 	_chart = EcosystemChart.new()
 	_chart.custom_minimum_size = Vector2(290, 140)
@@ -580,13 +598,56 @@ func _build_menu_modal() -> void:
 	# --- TAB 2: SETTINGS ---
 	var tab_settings: VBoxContainer = VBoxContainer.new()
 	tab_settings.name = "Settings"
-	tab_settings.add_theme_constant_override("separation", 10)
+	tab_settings.add_theme_constant_override("separation", 8)
+
+	var preset_hdr: Label = Label.new()
+	preset_hdr.text = "GRAPHICS QUALITY PRESET"
+	preset_hdr.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
+	preset_hdr.add_theme_font_size_override("font_size", 11)
+	tab_settings.add_child(preset_hdr)
+
+	var preset_hbox: HBoxContainer = HBoxContainer.new()
+	preset_hbox.add_theme_constant_override("separation", 6)
+
+	_btn_preset_low = Button.new()
+	_btn_preset_low.text = "Low"
+	_btn_preset_low.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_preset_low.pressed.connect(func(): _set_graphics_preset(GraphicsPresets.Preset.LOW))
+	preset_hbox.add_child(_btn_preset_low)
+
+	_btn_preset_balanced = Button.new()
+	_btn_preset_balanced.text = "Balanced (Iris Xe)"
+	_btn_preset_balanced.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_preset_balanced.pressed.connect(func(): _set_graphics_preset(GraphicsPresets.Preset.BALANCED))
+	preset_hbox.add_child(_btn_preset_balanced)
+
+	_btn_preset_cinematic = Button.new()
+	_btn_preset_cinematic.text = "Cinematic"
+	_btn_preset_cinematic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_preset_cinematic.pressed.connect(func(): _set_graphics_preset(GraphicsPresets.Preset.CINEMATIC))
+	preset_hbox.add_child(_btn_preset_cinematic)
+
+	tab_settings.add_child(preset_hbox)
+
+	_preset_desc_lbl = Label.new()
+	_preset_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_preset_desc_lbl.add_theme_font_size_override("font_size", 10)
+	_preset_desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+	tab_settings.add_child(_preset_desc_lbl)
+
+	_preset_status_lbl = Label.new()
+	_preset_status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_preset_status_lbl.add_theme_font_size_override("font_size", 10)
+	_preset_status_lbl.add_theme_color_override("font_color", Color(0.4, 0.95, 0.6))
+	tab_settings.add_child(_preset_status_lbl)
 
 	_preset_btn = Button.new()
-	_preset_btn.text = "Graphics: " + GraphicsPresets.get_preset_name(GraphicsPresets.current_preset) + " ▾"
-	_preset_btn.custom_minimum_size = Vector2(0, 30)
+	_preset_btn.text = "Cycle Preset [Click] ▾"
+	_preset_btn.custom_minimum_size = Vector2(0, 26)
 	_preset_btn.pressed.connect(_on_cycle_graphics_preset)
 	tab_settings.add_child(_preset_btn)
+
+	_update_preset_ui_state()
 
 	_screen_mode_btn = Button.new()
 	_screen_mode_btn.text = "Window Mode: Windowed (1280x720)"
@@ -740,15 +801,57 @@ func _update_modal_save_status() -> void:
 		_modal_load_btn.disabled = true
 		_modal_load_btn.text = "Load Save State [F9] (No Save Found)"
 
-func _on_cycle_graphics_preset() -> void:
-	var next_p: int = (int(GraphicsPresets.current_preset) + 1) % 3
-	var preset: GraphicsPresets.Preset = next_p as GraphicsPresets.Preset
+func _on_cycle_chart_mode() -> void:
+	if not _chart:
+		return
+	var new_mode: EcosystemChart.ChartMode = _chart.cycle_mode()
+	match new_mode:
+		EcosystemChart.ChartMode.POPULATION:
+			if _chart_mode_btn: _chart_mode_btn.text = "Populations ▾"
+			if _chart_title_lbl: _chart_title_lbl.text = "POPULATIONS & BIOMASS"
+		EcosystemChart.ChartMode.TRAIT_MEANS:
+			if _chart_mode_btn: _chart_mode_btn.text = "Trait Means ▾"
+			if _chart_title_lbl: _chart_title_lbl.text = "TRAIT MEANS (SPEED/EFF)"
+		EcosystemChart.ChartMode.DISPERSION_DEMOGRAPHICS:
+			if _chart_mode_btn: _chart_mode_btn.text = "Dispersion/Surv ▾"
+			if _chart_title_lbl: _chart_title_lbl.text = "DISPERSION & SURVIVAL"
+	show_toast("Chart View: " + _chart.get_mode_name(new_mode), true)
+
+func _set_graphics_preset(preset: GraphicsPresets.Preset) -> void:
 	var root_node: Node = get_tree().root if get_tree() else self
 	var changes: Dictionary = GraphicsPresets.apply_preset(preset, root_node)
 	GraphicsPresets.save_to_config(preset)
-	if _preset_btn:
-		_preset_btn.text = "Graphics: " + GraphicsPresets.get_preset_name(preset) + " ▾"
+	_update_preset_ui_state(changes)
 	show_toast("Applied Preset: " + GraphicsPresets.get_preset_name(preset), true)
+
+func _update_preset_ui_state(changes: Dictionary = {}) -> void:
+	var p: GraphicsPresets.Preset = GraphicsPresets.current_preset
+	if _btn_preset_low:
+		_btn_preset_low.modulate = Color(1.3, 1.3, 0.9) if p == GraphicsPresets.Preset.LOW else Color(1.0, 1.0, 1.0)
+	if _btn_preset_balanced:
+		_btn_preset_balanced.modulate = Color(1.3, 1.3, 0.9) if p == GraphicsPresets.Preset.BALANCED else Color(1.0, 1.0, 1.0)
+	if _btn_preset_cinematic:
+		_btn_preset_cinematic.modulate = Color(1.3, 1.3, 0.9) if p == GraphicsPresets.Preset.CINEMATIC else Color(1.0, 1.0, 1.0)
+
+	if _preset_desc_lbl:
+		_preset_desc_lbl.text = GraphicsPresets.get_preset_description(p)
+
+	if _preset_status_lbl:
+		var scale_pct: int = int(changes.get("scaling_3d_scale", 0.85) * 100.0) if not changes.is_empty() else (75 if p == GraphicsPresets.Preset.LOW else (85 if p == GraphicsPresets.Preset.BALANCED else 100))
+		var msaa_str: String = "Disabled" if p != GraphicsPresets.Preset.CINEMATIC else "2X"
+		var shadows_str: String = "Disabled" if p == GraphicsPresets.Preset.LOW else ("Fast 2K" if p == GraphicsPresets.Preset.BALANCED else "High 4K")
+		var grass_cnt: int = int(changes.get("grass_count", 350 if p == GraphicsPresets.Preset.LOW else (700 if p == GraphicsPresets.Preset.BALANCED else 1000)))
+		var rain_cnt: int = int(changes.get("rain_amount", 160 if p == GraphicsPresets.Preset.LOW else (350 if p == GraphicsPresets.Preset.BALANCED else 550)))
+		_preset_status_lbl.text = "Active: %s | Scale: %d%% | MSAA: %s | Shadows: %s | Grass: %d | Rain: %d" % [
+			GraphicsPresets.get_preset_name(p), scale_pct, msaa_str, shadows_str, grass_cnt, rain_cnt
+		]
+
+	if _preset_btn:
+		_preset_btn.text = "Cycle Preset: %s ▾" % GraphicsPresets.get_preset_name(p)
+
+func _on_cycle_graphics_preset() -> void:
+	var next_p: int = (int(GraphicsPresets.current_preset) + 1) % 3
+	_set_graphics_preset(next_p as GraphicsPresets.Preset)
 
 func _on_toggle_screen_mode() -> void:
 	var mode: DisplayServer.WindowMode = DisplayServer.window_get_mode()
@@ -865,8 +968,11 @@ func _process(delta: float) -> void:
 		]
 
 
-		if _chart and m.history.size() > 0:
-			_chart.update_history(m.history)
+		_chart_update_timer -= delta
+		if _chart_update_timer <= 0.0:
+			_chart_update_timer = CHART_UPDATE_INTERVAL
+			if _chart and m.history.size() > 0:
+				_chart.update_history(m.history)
 
 	# Update Camera Telemetry
 	if _camera is FreeLookCamera:

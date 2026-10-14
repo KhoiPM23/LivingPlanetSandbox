@@ -155,6 +155,12 @@ func step_simulation(delta_sim: float) -> void:
 		metrics.avg_herbivore_sense_range = total_herb_sense / h_len
 		metrics.avg_herbivore_energy_efficiency = total_herb_eff / h_len
 		metrics.avg_herbivore_foraging = total_herb_forage / h_len
+	else:
+		metrics.avg_herbivore_speed = 0.0
+		metrics.avg_herbivore_size = 0.0
+		metrics.avg_herbivore_sense_range = 0.0
+		metrics.avg_herbivore_energy_efficiency = 0.0
+		metrics.avg_herbivore_foraging = 0.0
 
 	var total_pred_speed: float = 0.0
 	var total_pred_size: float = 0.0
@@ -177,6 +183,12 @@ func step_simulation(delta_sim: float) -> void:
 		metrics.avg_predator_sense_range = total_pred_sense / p_len
 		metrics.avg_predator_energy_efficiency = total_pred_eff / p_len
 		metrics.avg_predator_predation = total_pred_predation / p_len
+	else:
+		metrics.avg_predator_speed = 0.0
+		metrics.avg_predator_size = 0.0
+		metrics.avg_predator_sense_range = 0.0
+		metrics.avg_predator_energy_efficiency = 0.0
+		metrics.avg_predator_predation = 0.0
 
 	var total_drought_tol: float = 0.0
 	var plants: Array = flora_sim.get_all_plants() if flora_sim else []
@@ -186,6 +198,8 @@ func step_simulation(delta_sim: float) -> void:
 			max_gen = maxi(max_gen, p.genome.generation)
 	if plants.size() > 0:
 		metrics.avg_plant_drought_tolerance = total_drought_tol / float(plants.size())
+	else:
+		metrics.avg_plant_drought_tolerance = 0.0
 	metrics.max_generation = max_gen
 
 	# Compute Allele Variances and Diversity

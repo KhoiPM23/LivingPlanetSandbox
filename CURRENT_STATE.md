@@ -4,7 +4,7 @@
 ---
 
 ### 1. Phase Status
-- **Current Milestone:** BLOCK 3 — Atmosphere, Precipitation and Wet Surfaces Completed.
+- **Current Milestone:** BLOCK 4 — Graphics Quality Presets and Evolutionary Telemetry Completed.
 - **Engine Version:** Godot Engine v4.6.3.stable.official.7d41c59c4 (Windows x86_64).
 - **Renderer:** Forward Plus (Vulkan 1.4.323 on Intel Iris Xe Graphics).
 - **Git Branch:** `main`.
@@ -29,18 +29,18 @@
 | **5-Trait Genome & Natural Selection** | PASS | Unit Test / Runtime | 5 traits (`size`, `speed`, `sense_range`, `energy_efficiency`, `predation`/`foraging`), ±5% bounded mutation, two-parent sexual recombination, trade-offs |
 | **Demographic Telemetry & Genetics** | PASS | Unit Test / Runtime | Trait averages, variances across all 5 traits, survival rates, birth rates, Shannon diversity index ($D$), genetic bottleneck warning |
 | **Weather, Wind & Surface Reaction** | PASS | Unit Test / Runtime | `AtmosphereDirector`, camera-anchored GPUParticles3D precipitation (rain slanted by wind vector, alpine summit snow flurries), tree foliage wind sway & specular wetness coupling, EnvironmentalGrid moisture replenishment without unit drift ($0.05 \to 1.0$) |
-| **Graphics Presets & Evolution Telemetry** | PASS | Unit Test / Runtime | Scalable profiles (Low, Balanced/Iris Xe, High) with dynamic particle budgets (160/60 Low, 350/120 Balanced, 550/200 High); allele variance, Shannon diversity index ($D$), genetic bottleneck warning, evolution snapshots |
+| **Graphics Presets & Evolution Telemetry** | PASS | Unit Test / Runtime | Decoupled `GraphicsPresets` with 3 instant profiles (Low, Balanced/Iris Xe, Cinematic/High) controlling MSAA (Disabled/2X), Fog, 3D resolution scale (75%/85%/100%), directional shadow range (0m/65m/110m), grass density (350/700/1000), precipitation budget (160/350/550); user config persistence `user://settings_graphics.cfg`; multi-channel `EcosystemChart` with 3 views (Populations, Species Trait Means, Dispersion/Demographics), 0.35s refresh throttle, safe empty-population handling |
 | **Climate Experiment Tools** | PASS | Unit Test / Runtime | 11 interactive tools: Heatwave `[8]`, Frost `[9]`, Fertilizer `[0]`, Disaster Shock `[-]`, Moisture `[2]/[3]`, Inspect `[1]`, Spawners `[4-6]`, Delete `[7]` |
 | **Causal Cascade Tracking & Telemetry** | PASS | Unit Test / Runtime | `CausalTracker` correlating player interventions to vegetation mortality, blooming, herbivore starvation, and displaying in HUD/Inspector |
 | **Visual Polish & Shading** | PASS | Runtime Vulkan | Slope-dependent rock cliff vertex blending ($>0.38$), warm shoreline sand ($h < 1.1\text{m}$), alpine snow summits ($h > 12.0\text{m}$), simplex organic noise |
 | **Atmospheric Depth Perspective** | PASS | Runtime Vulkan | Volumetric depth distance fog ($35\text{m} \to 140\text{m}$) synced with diurnal celestial horizon light color |
 | **Dual-Mode Exploration Camera** | PASS | Unit Test / Runtime | 5 modes (`FREE_LOOK`, `FIRST_PERSON_WALKER`, `ORBIT_INSPECT`, `FOLLOW_ENTITY`, `TOP_DOWN`), `V` toggle, `CharacterBody3D` walker physics, 1.65m eye level, captured mouse, Esc release & modal blocking |
 | **State-Driven Fauna Animations** | PASS | Runtime Vulkan | Procedural animations reflecting simulation state: resting, grazing, sprinting, shivering/starving, stalking |
-| **In-Engine Menu Modal & Settings** | PASS | Unit Test / Runtime | Centered glassmorphic modal (`[Esc]`) with Simulation controls (Resume, Re-roll, Save, Load, Reset, Quit), functional Settings, and Controls/Guide tab (`[F1]`) |
+| **In-Engine Menu Modal & Settings** | PASS | Unit Test / Runtime | Centered glassmorphic modal (`[Esc]`) with Simulation controls (Resume, Re-roll, Save, Load, Reset, Quit), functional Settings with preset selector, and Controls/Guide tab (`[F1]`) |
 | **Schema v3 World Persistence & Migration** | PASS | Unit Test / Runtime | Schema v3 serialization, automatic backwards compatibility and migration from Schema v1/v2 saves, .bak atomic backup rotation |
-| **Observability Dashboard & HUD** | PASS | Runtime Vulkan | Glassmorphic HUD: clock, compass, weather cycle button `[Y]`, live wind & wetness telemetry, camera modes, POI selector, tool palette, 5-trait Inspector, charts |
-| **Automated Test Runner** | PASS | Headless Test Suite | All 16 suites, 85 contract tests passing with 0 failures |
-| **GPU Performance Optimization** | PASS | Vulkan 1.4 Benchmark | Target Workload 51.6 Avg FPS, 10.38 ms avg frame time, 14.43 ms p95 on Intel Iris Xe; zero node allocation in process frame |
+| **Observability Dashboard & HUD** | PASS | Runtime Vulkan | Glassmorphic HUD: clock, compass, weather cycle button `[Y]`, live wind & wetness telemetry, camera modes, POI selector, tool palette, 5-trait Inspector, multi-view throttled charts |
+| **Automated Test Runner** | PASS | Headless Test Suite | All 16 suites, 88 contract tests passing with 0 failures |
+| **GPU Performance Optimization** | PASS | Vulkan 1.4 Benchmark | Target Workload 34.7 Avg FPS, 4.20 ms avg frame time, 11.27 ms p95 on Intel Iris Xe; zero node allocation in process frame |
 | **Windows Release Export** | PASS | CLI & Standalone Executable | Compiled Windows x64 release package at `build/release/LivingPlanetSandbox.exe` |
 | **Visual QA Capture** | PASS | Viewport Capture | Dual-mode runtime screenshots (`screenshot_flycam_view.png`, `screenshot_walker_view.png`) and 7 Block 7 screenshots |
 
