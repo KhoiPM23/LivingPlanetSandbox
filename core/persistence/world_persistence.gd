@@ -2,9 +2,9 @@ class_name WorldPersistence
 extends RefCounted
 
 ## Handles atomic, versioned save/load state persistence.
-## Supports Schema v1 and Schema v2 (complete ecological, environmental & physical simulation state).
+## Supports Schema v1, Schema v2 and Schema v3 (complete ecological, 5-trait genetic & physical simulation state).
 
-const CURRENT_SCHEMA_VERSION: int = 2
+const CURRENT_SCHEMA_VERSION: int = 3
 const DEFAULT_SAVE_PATH: String = "user://saves/world_state.json"
 
 ## Complete Save for Schema Version 2
@@ -141,7 +141,19 @@ static func save_complete_world(
 				"births_total": coordinator.metrics.births_total,
 				"births_by_type": coordinator.metrics.births_by_type.duplicate(),
 				"deaths_total": coordinator.metrics.deaths_total,
-				"deaths_by_cause": coordinator.metrics.deaths_by_cause.duplicate()
+				"deaths_by_cause": coordinator.metrics.deaths_by_cause.duplicate(),
+				"avg_herbivore_speed": coordinator.metrics.avg_herbivore_speed,
+				"avg_herbivore_size": coordinator.metrics.avg_herbivore_size,
+				"avg_herbivore_sense_range": coordinator.metrics.avg_herbivore_sense_range,
+				"avg_herbivore_energy_efficiency": coordinator.metrics.avg_herbivore_energy_efficiency,
+				"avg_herbivore_foraging": coordinator.metrics.avg_herbivore_foraging,
+				"avg_predator_speed": coordinator.metrics.avg_predator_speed,
+				"avg_predator_size": coordinator.metrics.avg_predator_size,
+				"avg_predator_sense_range": coordinator.metrics.avg_predator_sense_range,
+				"avg_predator_energy_efficiency": coordinator.metrics.avg_predator_energy_efficiency,
+				"avg_predator_predation": coordinator.metrics.avg_predator_predation,
+				"survival_rate_herbivore": coordinator.metrics.survival_rate_herbivore,
+				"survival_rate_predator": coordinator.metrics.survival_rate_predator
 			}
 
 		if coordinator.causal_tracker:
@@ -262,6 +274,10 @@ static func load_world(save_path: String) -> Dictionary:
 	if not save_dict.has("seed") or not save_dict.has("clock"):
 		return {"error": ERR_INVALID_DATA, "data": {}, "message": "Missing required save sections (seed or clock)"}
 
+	# Schema Migration to v3 if older version
+	if ver < CURRENT_SCHEMA_VERSION:
+		save_dict = _migrate_save_data(save_dict, ver, CURRENT_SCHEMA_VERSION)
+
 	# Vector3 Deserialization Helper
 	_deserialize_positions(save_dict)
 
@@ -307,3 +323,83 @@ static func _deserialize_positions(data: Dictionary) -> void:
 					var varr: Array = pr["velocity"]
 					if varr.size() >= 3:
 						pr["velocity"] = Vector3(float(varr[0]), float(varr[1]), float(varr[2]))
+
+static func _migrate_save_data(data: Dictionary, from_ver: int, to_ver: int) -> Dictionary:
+	var migrated: Dictionary = data.duplicate(true)
+
+	# Migration v1 -> v2
+	if from_ver < 2:
+		if not migrated.has("ecosystem"):
+			migrated["ecosystem"] = {"plants": [], "herbivores": [], "predators": []}
+		if not migrated.has("metrics"):
+			migrated["metrics"] = {}
+
+	# Migration v2 -> v3: 5 Heritable Traits & Demographic Rates
+	if from_ver < 3:
+		var eco: Dictionary = migrated.get("ecosystem", {})
+		if eco is Dictionary:
+			# Migrate herbivores genomes
+			var herbs: Array = eco.get("herbivores", [])
+			if herbs is Array:
+				for h in herbs:
+					if h is Dictionary:
+						var g_dict: Variant = h.get("genome", null)
+						if not (g_dict is Dictionary) or g_dict.is_empty():
+							h["genome"] = EcosystemGenome.create_default_fauna("island_deer").serialize()
+						else:
+							_ensure_v3_fauna_genome(g_dict, "island_deer")
+
+			# Migrate predators genomes
+			var preds: Array = eco.get("predators", [])
+			if preds is Array:
+				for p in preds:
+					if p is Dictionary:
+						var g_dict: Variant = p.get("genome", null)
+						if not (g_dict is Dictionary) or g_dict.is_empty():
+							p["genome"] = EcosystemGenome.create_default_fauna("mountain_stalker").serialize()
+						else:
+							_ensure_v3_fauna_genome(g_dict, "mountain_stalker")
+
+			# Migrate plants genomes
+			var plants: Array = eco.get("plants", [])
+			if plants is Array:
+				for pl in plants:
+					if pl is Dictionary:
+						var g_dict: Variant = pl.get("genome", null)
+						if not (g_dict is Dictionary) or g_dict.is_empty():
+							pl["genome"] = EcosystemGenome.create_default_flora(pl.get("species", "grass_patch")).serialize()
+
+		# Backfill metrics if present
+		if migrated.has("metrics") and migrated["metrics"] is Dictionary:
+			var m: Dictionary = migrated["metrics"]
+			if not m.has("avg_herbivore_sense_range"): m["avg_herbivore_sense_range"] = 28.0
+			if not m.has("avg_herbivore_energy_efficiency"): m["avg_herbivore_energy_efficiency"] = 1.0
+			if not m.has("avg_herbivore_foraging"): m["avg_herbivore_foraging"] = 1.0
+			if not m.has("avg_predator_predation"): m["avg_predator_predation"] = 1.0
+			if not m.has("survival_rate_herbivore"): m["survival_rate_herbivore"] = 1.0
+			if not m.has("survival_rate_predator"): m["survival_rate_predator"] = 1.0
+
+		migrated["version"] = to_ver
+		migrated["migrated_from_version"] = from_ver
+
+	return migrated
+
+static func _ensure_v3_fauna_genome(g: Dictionary, species: String) -> void:
+	if not g.has("size"):
+		g["size"] = float(g.get("size_scale", 1.0))
+	if not g.has("speed"):
+		g["speed"] = float(g.get("speed_mult", 1.0))
+	if not g.has("sense_range"):
+		g["sense_range"] = float(g.get("perception_radius", 28.0 if species == "island_deer" else 32.0))
+	if not g.has("energy_efficiency"):
+		g["energy_efficiency"] = float(g.get("metabolism_efficiency", 1.0))
+	if species == "mountain_stalker":
+		if not g.has("predation"):
+			g["predation"] = 1.0
+		g["foraging"] = 0.0
+	else:
+		if not g.has("foraging"):
+			g["foraging"] = 1.0
+		g["predation"] = 0.0
+	if not g.has("parent_b_id"):
+		g["parent_b_id"] = -1

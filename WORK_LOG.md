@@ -490,3 +490,32 @@ es://presentation/ui/hud.gd):**
   - Visual QA script (`tests/visual_qa_camera_dual.gd`) rendered authentic runtime screenshots using OpenGL 3.3.0 hardware acceleration:
     - `screenshot_flycam_view.png` (1280x720): High-angle scenic Flycam flight overview showing full island, wildlife, vegetation, and HUD.
     - `screenshot_walker_view.png` (1280x720): Authentic eye-level first-person view at 1.65m on grassy terrain slope looking up toward the summit monolith.
+
+### BLOCK 2 — Causal Ecology and Heritable Traits (COMPLETED)
+- **5-Trait Genome Model (`res://core/ecosystem/genome.gd`):**
+  - Integrated 5 heritable functional traits referenced from `judeudumullage/Genesis` (MIT License):
+    1. `size` (`[0.60, 1.50]`, default 1.0): Scales maximum health and energy capacity; increases basal metabolic drain allometrically ($\times \text{size}^{1.5}$).
+    2. `speed` (`[0.60, 1.50]`, default 1.0): Scales locomotor agility and sprint velocity; increases metabolic burn quadratically ($\times \text{speed}^2$).
+    3. `sense_range` (`[14.0, 48.0\text{m}]`, default 28.0m deer, 32.0m stalker): Scales threat detection, food foraging radius, and hunt target acquisition.
+    4. `energy_efficiency` (`[0.65, 1.45]`, default 1.0): Unified metabolic efficiency parameter; reduces hunger drain and shortens reproduction cooldowns.
+    5. Species-specific prowess:
+       - `predation` (`[0.60, 1.50]`, default 1.0 stalker, 0.0 deer): Scales carnivore strike distance ($2.0\text{m} \times \text{predation}$) and kill energy harvest yield ($55.0 \times [0.8 + 0.2 \cdot \text{predation}]$).
+       - `foraging` (`[0.60, 1.50]`, default 1.0 deer, 0.0 stalker): Scales herbivore plant grazing rate ($2.5 \cdot \text{foraging}$ kg/s) and nutrient absorption.
+  - Seamless backward compatibility: bidirectional getters/setters mapping legacy property names (`size_scale`, `speed_mult`, `perception_radius`, `metabolism_efficiency`).
+- **Mutation & Sexual Recombination Mechanics:**
+  - Bounded $\pm 5\%$ mutation: single-parent mutation (`create_mutated_offspring`) and two-parent sexual recombination (`create_recombined_offspring`) clamp relative deltas strictly within $\pm 0.05$ of parent values.
+  - Two-parent Mendelian crossover: selects alleles from either parent with equal probability, tracks dual lineage (`parent_id`, `parent_b_id`), and calculates generation ($\max(\text{gen}_A, \text{gen}_B) + 1$).
+  - Clonal fallback: adult animals with no mate in vicinity fall back to single-parent reproduction to prevent instant extinction cascades.
+- **Ecological Telemetry & Observability (`ecosystem_coordinator.gd`, `ecosystem_metrics.gd`):**
+  - Computes population-wide means and variances for all 5 traits (`allele_speed_variance`, `allele_size_variance`, `allele_sense_variance`, `allele_efficiency_variance`, `allele_foraging_variance`, `allele_predation_variance`).
+  - Demographic rate tracking: live herbivore and predator survival rates ($\frac{\text{living}}{\text{cohort}}$) and birth rates.
+  - Observability HUD (`presentation/ui/hud.gd`): Inspector card formatted to display all 5 traits and dual-parent lineages.
+- **Schema v3 Persistence & Automated Migration (`world_persistence.gd`):**
+  - Upgraded schema version: `CURRENT_SCHEMA_VERSION = 3`.
+  - Implemented automatic migration function `_migrate_save_data()` converting Schema v1 and Schema v2 saves into Schema v3.
+  - Old save data missing genome fields is backfilled with valid species-specific defaults.
+  - Preserves atomic backup rotation (`.bak`) and guarantees save/load roundtrip integrity.
+- **Verification & Testing (`tests/test_genetics_and_selection.gd`):**
+  - Added 4 contract tests covering 5-trait bounds, strict $\pm 5\%$ mutation limits, Mendelian sexual recombination, causal behavioral impact (grazing rate and strike range), multi-generation numerical stability (50 ticks without NaN or population runaway), and Schema v2 $\to$ v3 migration roundtrip.
+  - All 16 contract test suites: **82 Passed, 0 Failed**.
+  - Release smoke tests: **7/7 Passed**.

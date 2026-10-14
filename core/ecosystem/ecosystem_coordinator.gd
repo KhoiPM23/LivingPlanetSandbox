@@ -135,16 +135,48 @@ func step_simulation(delta_sim: float) -> void:
 	# Compute live genetic telemetry
 	var total_herb_speed: float = 0.0
 	var total_herb_size: float = 0.0
+	var total_herb_sense: float = 0.0
+	var total_herb_eff: float = 0.0
+	var total_herb_forage: float = 0.0
 	var max_gen: int = 1
 	var herbs: Array = fauna_sim.get_all_herbivores() if fauna_sim else []
 	for h in herbs:
 		if h.genome:
-			total_herb_speed += h.genome.speed_mult
-			total_herb_size += h.genome.size_scale
+			total_herb_speed += h.genome.speed
+			total_herb_size += h.genome.size
+			total_herb_sense += h.genome.sense_range
+			total_herb_eff += h.genome.energy_efficiency
+			total_herb_forage += h.genome.foraging
 			max_gen = maxi(max_gen, h.genome.generation)
 	if herbs.size() > 0:
-		metrics.avg_herbivore_speed = total_herb_speed / float(herbs.size())
-		metrics.avg_herbivore_size = total_herb_size / float(herbs.size())
+		var h_len: float = float(herbs.size())
+		metrics.avg_herbivore_speed = total_herb_speed / h_len
+		metrics.avg_herbivore_size = total_herb_size / h_len
+		metrics.avg_herbivore_sense_range = total_herb_sense / h_len
+		metrics.avg_herbivore_energy_efficiency = total_herb_eff / h_len
+		metrics.avg_herbivore_foraging = total_herb_forage / h_len
+
+	var total_pred_speed: float = 0.0
+	var total_pred_size: float = 0.0
+	var total_pred_sense: float = 0.0
+	var total_pred_eff: float = 0.0
+	var total_pred_predation: float = 0.0
+	var preds: Array = fauna_sim.get_all_predators() if fauna_sim else []
+	for p in preds:
+		if p.genome:
+			total_pred_speed += p.genome.speed
+			total_pred_size += p.genome.size
+			total_pred_sense += p.genome.sense_range
+			total_pred_eff += p.genome.energy_efficiency
+			total_pred_predation += p.genome.predation
+			max_gen = maxi(max_gen, p.genome.generation)
+	if preds.size() > 0:
+		var p_len: float = float(preds.size())
+		metrics.avg_predator_speed = total_pred_speed / p_len
+		metrics.avg_predator_size = total_pred_size / p_len
+		metrics.avg_predator_sense_range = total_pred_sense / p_len
+		metrics.avg_predator_energy_efficiency = total_pred_eff / p_len
+		metrics.avg_predator_predation = total_pred_predation / p_len
 
 	var total_drought_tol: float = 0.0
 	var plants: Array = flora_sim.get_all_plants() if flora_sim else []
@@ -158,12 +190,35 @@ func step_simulation(delta_sim: float) -> void:
 
 	# Compute Allele Variances and Diversity
 	var speed_sq_sum: float = 0.0
+	var size_sq_sum: float = 0.0
+	var sense_sq_sum: float = 0.0
+	var eff_sq_sum: float = 0.0
+	var forage_sq_sum: float = 0.0
 	for h in herbs:
 		if h.genome:
-			var diff: float = h.genome.speed_mult - metrics.avg_herbivore_speed
-			speed_sq_sum += diff * diff
-	var spd_var: float = (speed_sq_sum / float(herbs.size())) if herbs.size() > 1 else 0.0
-	metrics.allele_speed_variance = spd_var
+			var diff_spd: float = h.genome.speed - metrics.avg_herbivore_speed
+			speed_sq_sum += diff_spd * diff_spd
+			var diff_sz: float = h.genome.size - metrics.avg_herbivore_size
+			size_sq_sum += diff_sz * diff_sz
+			var diff_sn: float = h.genome.sense_range - metrics.avg_herbivore_sense_range
+			sense_sq_sum += diff_sn * diff_sn
+			var diff_ef: float = h.genome.energy_efficiency - metrics.avg_herbivore_energy_efficiency
+			eff_sq_sum += diff_ef * diff_ef
+			var diff_fg: float = h.genome.foraging - metrics.avg_herbivore_foraging
+			forage_sq_sum += diff_fg * diff_fg
+	var h_div: float = float(herbs.size()) if herbs.size() > 1 else 1.0
+	metrics.allele_speed_variance = speed_sq_sum / h_div if herbs.size() > 1 else 0.0
+	metrics.allele_size_variance = size_sq_sum / h_div if herbs.size() > 1 else 0.0
+	metrics.allele_sense_variance = sense_sq_sum / h_div if herbs.size() > 1 else 0.0
+	metrics.allele_efficiency_variance = eff_sq_sum / h_div if herbs.size() > 1 else 0.0
+	metrics.allele_foraging_variance = forage_sq_sum / h_div if herbs.size() > 1 else 0.0
+
+	var pred_sq_sum: float = 0.0
+	for p in preds:
+		if p.genome:
+			var diff_pr: float = p.genome.predation - metrics.avg_predator_predation
+			pred_sq_sum += diff_pr * diff_pr
+	metrics.allele_predation_variance = (pred_sq_sum / float(preds.size())) if preds.size() > 1 else 0.0
 
 	var drought_sq_sum: float = 0.0
 	for p in plants:
@@ -173,8 +228,19 @@ func step_simulation(delta_sim: float) -> void:
 	var drg_var: float = (drought_sq_sum / float(plants.size())) if plants.size() > 1 else 0.0
 	metrics.allele_drought_variance = drg_var
 
+	# Demographic survival & birth rate calculation
+	var deaths_herb: int = int(metrics.deaths_by_cause.get("herbivore_starvation", 0)) + int(metrics.deaths_by_cause.get("herbivore_predation", 0)) + int(metrics.deaths_by_cause.get("herbivore_old_age", 0))
+	var cohort_herb: int = herbs.size() + deaths_herb
+	metrics.survival_rate_herbivore = (float(herbs.size()) / float(cohort_herb)) if cohort_herb > 0 else 1.0
+	metrics.birth_rate_herbivore = float(metrics.births_by_type.get("herbivore", 0)) / maxf(1.0, float(cohort_herb))
+
+	var deaths_pred: int = int(metrics.deaths_by_cause.get("predator_starvation", 0)) + int(metrics.deaths_by_cause.get("predator_old_age", 0))
+	var cohort_pred: int = preds.size() + deaths_pred
+	metrics.survival_rate_predator = (float(preds.size()) / float(cohort_pred)) if cohort_pred > 0 else 1.0
+	metrics.birth_rate_predator = float(metrics.births_by_type.get("predator", 0)) / maxf(1.0, float(cohort_pred))
+
 	# Diversity Index: combination of standard deviations
-	var spd_std: float = sqrt(spd_var)
+	var spd_std: float = sqrt(metrics.allele_speed_variance)
 	var drg_std: float = sqrt(drg_var)
 	metrics.genetic_diversity_index = clampf((spd_std * 3.0 + drg_std * 4.0), 0.0, 2.0)
 	metrics.bottleneck_warning = (metrics.genetic_diversity_index < 0.04 and herbs.size() > 5)

@@ -1016,18 +1016,30 @@ func _on_inspection_performed(data: Dictionary) -> void:
 		if genome_dict is Dictionary and not genome_dict.is_empty():
 			var gen: int = int(genome_dict.get("generation", 1))
 			var p_id: int = int(genome_dict.get("parent_id", -1))
-			txt += "=== GENOME & LINEAGE ===\n"
+			var p_b_id: int = int(genome_dict.get("parent_b_id", -1))
+			txt += "=== 5-TRAIT GENOME & LINEAGE ===\n"
 			txt += "Generation: %d\n" % gen
-			if p_id > 0:
+			if p_id > 0 and p_b_id > 0:
+				txt += "Lineage:    Cross of #%d x #%d\n" % [p_id, p_b_id]
+			elif p_id > 0:
 				txt += "Lineage:    Offspring of #%d\n" % p_id
 			else:
 				txt += "Lineage:    Founder Ancestor (Gen 1)\n"
-			if genome_dict.has("speed_mult"):
-				txt += "Speed Allele:  %.2fx\n" % float(genome_dict.get("speed_mult", 1.0))
-			if genome_dict.has("metabolism_efficiency"):
-				txt += "Metabolism:    %.2fx efficiency\n" % float(genome_dict.get("metabolism_efficiency", 1.0))
-			if genome_dict.has("size_scale"):
-				txt += "Body Scale:    %.2fx\n" % float(genome_dict.get("size_scale", 1.0))
+
+			var sz: float = float(genome_dict.get("size", genome_dict.get("size_scale", 1.0)))
+			var spd: float = float(genome_dict.get("speed", genome_dict.get("speed_mult", 1.0)))
+			var sn: float = float(genome_dict.get("sense_range", genome_dict.get("perception_radius", 28.0)))
+			var eff: float = float(genome_dict.get("energy_efficiency", genome_dict.get("metabolism_efficiency", 1.0)))
+			txt += "Size Scale:    %.2fx (mass & caps)\n" % sz
+			txt += "Speed Allele:  %.2fx (agility)\n" % spd
+			txt += "Sense Range:   %.1fm (sight/scent)\n" % sn
+			txt += "Metabolism:    %.2fx (efficiency)\n" % eff
+
+			if genome_dict.has("predation") and float(genome_dict["predation"]) > 0.05:
+				txt += "Predation:     %.2fx (strike prowess)\n" % float(genome_dict["predation"])
+			elif genome_dict.has("foraging") and float(genome_dict["foraging"]) > 0.05:
+				txt += "Foraging:      %.2fx (intake rate)\n" % float(genome_dict["foraging"])
+
 			if genome_dict.has("drought_tolerance"):
 				txt += "Drought Tol:   %.0f%% min moisture\n" % (float(genome_dict.get("drought_tolerance", 0.20)) * 100.0)
 			txt += "\n"

@@ -59,7 +59,7 @@ class HerbivoreData extends AnimalBase:
 		genome = p_genome if p_genome != null else EcosystemGenome.create_default_fauna("island_deer")
 		max_age = 150.0
 		move_speed = genome.get_effective_speed(3.2)
-		reproduce_cooldown = 25.0 / genome.metabolism_efficiency
+		reproduce_cooldown = 25.0 / genome.energy_efficiency
 		state = HerbivoreState.WANDERING
 
 class PredatorData extends AnimalBase:
@@ -75,7 +75,7 @@ class PredatorData extends AnimalBase:
 		genome = p_genome if p_genome != null else EcosystemGenome.create_default_fauna("mountain_stalker")
 		max_age = 180.0
 		move_speed = genome.get_effective_speed(5.4)
-		reproduce_cooldown = 35.0 / genome.metabolism_efficiency
+		reproduce_cooldown = 35.0 / genome.energy_efficiency
 		state = PredatorState.WANDERING
 
 
@@ -245,7 +245,7 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 		var burn_mult: float = (h.genome.get_metabolic_burn_multiplier() if h.genome else 1.0) * weather_burn_mult
 		var metabolic_drain: float = 1.0 * delta * burn_mult
 		if h.velocity.length_squared() > 0.1:
-			metabolic_drain += 0.5 * delta * (h.genome.speed_mult if h.genome else 1.0) * weather_burn_mult
+			metabolic_drain += 0.5 * delta * (h.genome.speed if h.genome else 1.0) * weather_burn_mult
 		h.energy = maxf(0.0, h.energy - metabolic_drain)
 
 		# Starvation damage
@@ -265,8 +265,8 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 				herbivore_deaths.append({"id": id, "reason": "old_age"})
 				continue
 
-		# Check nearby predators (Threat / Fleeing with perception radius)
-		var threat_dist: float = (h.genome.perception_radius * 0.5) if h.genome else 14.0
+		# Check nearby predators (Threat / Fleeing with sense_range)
+		var threat_dist: float = (h.genome.sense_range * 0.5) if h.genome else 14.0
 		var nearest_threat: PredatorData = _find_nearest_predator(h.position, threat_dist)
 
 		if nearest_threat != null:
@@ -283,25 +283,31 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 			_move_animal(h, delta, height_callable)
 		else:
 			# Not fleeing: AI behavior based on energy
+			var max_e: float = h.genome.get_effective_max_energy() if h.genome else 100.0
+			var max_hp: float = h.genome.get_effective_max_health() if h.genome else 100.0
+
 			if h.state == HerbivoreState.EATING:
 				h.eat_timer += delta
 				if flora_sim:
-					var eaten: float = flora_sim.consume_biomass(h.target_plant_id, 2.5 * delta)
-					h.energy = minf(100.0, h.energy + eaten * 12.0)
-					h.health = minf(100.0, h.health + 2.0 * delta)
+					var intake_rate: float = h.genome.get_effective_intake_rate(2.5) if h.genome else 2.5
+					var eaten: float = flora_sim.consume_biomass(h.target_plant_id, intake_rate * delta)
+					var energy_gain: float = eaten * 12.0 * (h.genome.energy_efficiency if h.genome else 1.0)
+					h.energy = minf(max_e, h.energy + energy_gain)
+					h.health = minf(max_hp, h.health + 2.0 * delta)
 
 					# Stop eating if plant depleted or full
-					if eaten <= 0.05 or h.energy >= 95.0 or h.eat_timer > 4.0:
+					if eaten <= 0.05 or h.energy >= (max_e * 0.95) or h.eat_timer > 4.0:
 						h.state = HerbivoreState.WANDERING
 						h.eat_timer = 0.0
 						h.target_plant_id = -1
 				h.velocity = Vector3.ZERO
-			elif h.energy < 80.0:
-				# Hungry: Seek food
+			elif h.energy < (max_e * 0.80):
+				# Hungry: Seek food with sense_range
 				h.state = HerbivoreState.FORAGING
 				var food: Variant = null
+				var forage_radius: float = h.genome.sense_range if h.genome else 28.0
 				if flora_sim:
-					food = flora_sim.find_nearest_food(h.position, 28.0, 0.8)
+					food = flora_sim.find_nearest_food(h.position, forage_radius, 0.8)
 
 				if food != null:
 					h.target_plant_id = food.id
@@ -313,9 +319,11 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 						h.eat_timer = 0.0
 						h.velocity = Vector3.ZERO
 						if flora_sim:
-							var eaten: float = flora_sim.consume_biomass(h.target_plant_id, 2.5 * delta)
-							h.energy = minf(100.0, h.energy + eaten * 12.0)
-							h.health = minf(100.0, h.health + 2.0 * delta)
+							var intake_rate: float = h.genome.get_effective_intake_rate(2.5) if h.genome else 2.5
+							var eaten: float = flora_sim.consume_biomass(h.target_plant_id, intake_rate * delta)
+							var energy_gain: float = eaten * 12.0 * (h.genome.energy_efficiency if h.genome else 1.0)
+							h.energy = minf(max_e, h.energy + energy_gain)
+							h.health = minf(max_hp, h.health + 2.0 * delta)
 					else:
 						h.velocity = to_food.normalized() * (h.move_speed * weather_speed_mult)
 						_move_animal(h, delta, height_callable)
@@ -330,13 +338,20 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 		# Reproduction (Adult with high energy & health)
 		if h.life_stage == LifeStage.ADULT and h.energy >= 75.0 and h.health >= 70.0 and h.reproduce_cooldown <= 0.0:
 			if _herbivores.size() < 40:
-				var child_genome: EcosystemGenome = h.genome.create_mutated_offspring(h.id, _rng, 0.25, 0.12) if h.genome else null
+				var mate: HerbivoreData = _find_compatible_mate(h, (h.genome.sense_range * 0.5) if h.genome else 14.0)
+				var child_genome: EcosystemGenome = null
+				if mate != null and mate.genome != null and h.genome != null:
+					child_genome = EcosystemGenome.create_recombined_offspring(h.genome, mate.genome, h.id, mate.id, _rng, 0.25, 0.05)
+					mate.energy -= 20.0
+					mate.reproduce_cooldown = maxf(mate.reproduce_cooldown, 15.0 / mate.genome.energy_efficiency)
+				elif h.genome != null:
+					child_genome = h.genome.create_mutated_offspring(h.id, _rng, 0.25, 0.05)
+
 				var b_pos: Vector3 = h.position + Vector3(_rng.randf_range(-2.0, 2.0), 0.0, _rng.randf_range(-2.0, 2.0))
 				herbivore_births.append({"pos": b_pos, "genome": child_genome})
 				h.energy -= 35.0
 				var base_cool: float = _rng.randf_range(25.0, 45.0)
-				h.reproduce_cooldown = base_cool / (h.genome.metabolism_efficiency if h.genome else 1.0)
-
+				h.reproduce_cooldown = base_cool / (h.genome.energy_efficiency if h.genome else 1.0)
 
 		total_herb_energy += h.energy
 		total_herb_health += h.health
@@ -376,27 +391,32 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 				predator_deaths.append({"id": pid, "reason": "old_age"})
 				continue
 
+		var p_max_e: float = p.genome.get_effective_max_energy() if p.genome else 100.0
+		var p_max_hp: float = p.genome.get_effective_max_health() if p.genome else 100.0
+
 		if p.state == PredatorState.EATING:
 			p.eat_timer += delta
 			p.velocity = Vector3.ZERO
-			if p.eat_timer >= 3.0 or p.energy >= 95.0:
+			if p.eat_timer >= 3.0 or p.energy >= (p_max_e * 0.95):
 				p.state = PredatorState.WANDERING
 				p.eat_timer = 0.0
-		elif p.energy < 75.0:
-			# Hunt nearest herbivore with perception radius
+		elif p.energy < (p_max_e * 0.75):
+			# Hunt nearest herbivore with sense_range
 			p.state = PredatorState.HUNTING
-			var hunt_radius: float = p.genome.perception_radius if p.genome else 32.0
+			var hunt_radius: float = p.genome.sense_range if p.genome else 32.0
 			var target_prey: HerbivoreData = _find_nearest_herbivore(p.position, hunt_radius)
 			if target_prey != null:
 				p.target_prey_id = target_prey.id
 				var to_prey: Vector3 = (target_prey.position - p.position)
 				to_prey.y = 0.0
 				var dist: float = to_prey.length()
-				if dist < 2.0 or dist <= (p.move_speed * delta):
-					# Catch and kill prey!
+				var strike_dist: float = p.genome.get_effective_strike_distance(2.0) if p.genome else 2.0
+				if dist < strike_dist or dist <= (p.move_speed * delta):
+					# Catch and kill prey! Strike success and yield depend on predation trait
 					herbivore_deaths.append({"id": target_prey.id, "reason": "predation"})
-					p.energy = minf(100.0, p.energy + 55.0)
-					p.health = minf(100.0, p.health + 15.0)
+					var kill_energy: float = p.genome.get_effective_kill_yield(55.0) if p.genome else 55.0
+					p.energy = minf(p_max_e, p.energy + kill_energy)
+					p.health = minf(p_max_hp, p.health + 15.0)
 					p.state = PredatorState.EATING
 					p.eat_timer = 0.0
 					p.velocity = Vector3.ZERO
@@ -410,14 +430,22 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 			p.state = PredatorState.WANDERING
 			_wander_animal(p, delta, height_callable, weather_speed_mult)
 
-		# Predator reproduction
+		# Predator reproduction (Sexual recombination if compatible mate is nearby, else single-parent)
 		if p.energy >= 85.0 and p.health >= 80.0 and p.reproduce_cooldown <= 0.0 and _predators.size() < 6:
-			var child_p_genome: EcosystemGenome = p.genome.create_mutated_offspring(p.id, _rng, 0.25, 0.12) if p.genome else null
+			var p_mate: PredatorData = _find_compatible_mate(p, (p.genome.sense_range * 0.5) if p.genome else 16.0)
+			var child_p_genome: EcosystemGenome = null
+			if p_mate != null and p_mate.genome != null and p.genome != null:
+				child_p_genome = EcosystemGenome.create_recombined_offspring(p.genome, p_mate.genome, p.id, p_mate.id, _rng, 0.25, 0.05)
+				p_mate.energy -= 25.0
+				p_mate.reproduce_cooldown = maxf(p_mate.reproduce_cooldown, 25.0 / p_mate.genome.energy_efficiency)
+			elif p.genome != null:
+				child_p_genome = p.genome.create_mutated_offspring(p.id, _rng, 0.25, 0.05)
+
 			var pb_pos: Vector3 = p.position + Vector3(_rng.randf_range(-2.0, 2.0), 0.0, _rng.randf_range(-2.0, 2.0))
 			predator_births.append({"pos": pb_pos, "genome": child_p_genome})
 			p.energy -= 40.0
 			var base_pred_cool: float = _rng.randf_range(40.0, 60.0)
-			p.reproduce_cooldown = base_pred_cool / (p.genome.metabolism_efficiency if p.genome else 1.0)
+			p.reproduce_cooldown = base_pred_cool / (p.genome.energy_efficiency if p.genome else 1.0)
 
 
 		total_pred_energy += p.energy
@@ -509,6 +537,23 @@ func _find_nearest_herbivore(pos: Vector3, max_dist: float) -> HerbivoreData:
 			best_dist_sq = d_sq
 			nearest = h
 	return nearest
+
+func _find_compatible_mate(animal: AnimalBase, search_radius: float) -> AnimalBase:
+	var best_dist_sq: float = search_radius * search_radius
+	var best_mate: AnimalBase = null
+	var candidate_pool: Array = _herbivores.values() if animal.type == "herbivore" else _predators.values()
+	for candidate in candidate_pool:
+		if candidate.id == animal.id:
+			continue
+		if candidate.life_stage != LifeStage.ADULT:
+			continue
+		if candidate.energy < 60.0 or candidate.health < 60.0:
+			continue
+		var d_sq: float = animal.position.distance_squared_to(candidate.position)
+		if d_sq < best_dist_sq:
+			best_dist_sq = d_sq
+			best_mate = candidate
+	return best_mate
 
 func restore_herbivore(data: Dictionary) -> int:
 	var id: int = int(data.get("id", _next_id))
