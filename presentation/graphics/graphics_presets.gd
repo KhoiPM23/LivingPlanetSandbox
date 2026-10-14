@@ -111,19 +111,22 @@ static func apply_preset(preset: Preset, scene_root: Node) -> Dictionary:
 		mm.visible_instance_count = mini(target_instances, mm.instance_count)
 		changes["grass_count"] = mm.visible_instance_count
 
-	# 5. Rain Particle Volume (WeatherEffectsController)
+	# 5. Precipitation Particle Volume (WeatherEffectsController / AtmosphereDirector)
 	var weather_fx: WeatherEffectsController = scene_root.find_child("WeatherEffectsController", true, false) as WeatherEffectsController
-	if weather_fx and weather_fx._rain_particles:
+	if weather_fx:
 		match preset:
 			Preset.LOW:
-				weather_fx._rain_particles.amount = 160
+				weather_fx.set_particle_budget(160, 60)
 				changes["rain_amount"] = 160
+				changes["snow_amount"] = 60
 			Preset.BALANCED:
-				weather_fx._rain_particles.amount = 350
+				weather_fx.set_particle_budget(350, 120)
 				changes["rain_amount"] = 350
+				changes["snow_amount"] = 120
 			Preset.HIGH:
-				weather_fx._rain_particles.amount = 550
+				weather_fx.set_particle_budget(550, 200)
 				changes["rain_amount"] = 550
+				changes["snow_amount"] = 200
 
 	return changes
 

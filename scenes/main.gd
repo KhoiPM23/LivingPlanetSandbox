@@ -3,6 +3,8 @@ extends Node3D
 
 ## Primary entry point scene connecting WorldBootstrap, IslandTerrain, EnvironmentalGrid, Atmosphere, and HUD.
 
+const AtmosphereDirector = preload("res://presentation/environment/atmosphere_director.gd")
+
 @onready var bootstrap: WorldBootstrap = $WorldBootstrap
 @onready var terrain: IslandTerrain = $IslandTerrain
 @onready var water: WaterPlane = $WaterPlane
@@ -39,8 +41,8 @@ func _ready() -> void:
 		var entity_count: int = bootstrap.entity_registry.get_count() if (bootstrap and bootstrap.entity_registry) else 0
 		print("[Main] Biome props & foliage scattered. Tracked entities: %d" % entity_count)
 
-	# 3b. Setup Dynamic Weather Effects & Wind-Surface Reactions
-	var weather_fx: WeatherEffectsController = WeatherEffectsController.new()
+	# 3b. Setup Dynamic Atmosphere Director & Wind-Surface Reactions
+	var weather_fx: WeatherEffectsController = AtmosphereDirector.new()
 	weather_fx.name = "WeatherEffectsController"
 	add_child(weather_fx)
 	if weather and terrain:

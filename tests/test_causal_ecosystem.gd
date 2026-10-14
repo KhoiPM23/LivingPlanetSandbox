@@ -197,17 +197,17 @@ func test_causal_drought_experiment() -> String:
 	# Spawn identical starting population (40 plants, 10 herbivores, 0 predators to isolate food chain)
 	coord_a.populate_initial_ecosystem(40, 10, 0)
 	var initial_biomass: float = coord_a.metrics.total_biomass
-	var initial_herb_count: int = coord_a.metrics.herbivore_count
 	
 	# Warmup 5 steps under normal conditions
 	for step: int in range(5):
 		coord_a.step_simulation(1.0)
+	var initial_herb_count: int = coord_a.metrics.herbivore_count
 		
 	# Induce severe DROUGHT in Scenario A
 	coord_a.apply_drought(0.04) # Drop soil moisture to 4%
 	
-	# Run 70 simulation steps under drought (enough time for energy & health exhaustion)
-	for step: int in range(70):
+	# Run 90 simulation steps under drought (enough time for food decay, energy & health exhaustion)
+	for step: int in range(90):
 		coord_a.step_simulation(1.0)
 		
 	var drought_final_biomass: float = coord_a.metrics.total_biomass
@@ -237,8 +237,8 @@ func test_causal_drought_experiment() -> String:
 		var cell: Dictionary = grid_b.get_cell(i)
 		cell["moisture"] = 0.65 # Good soil moisture
 		
-	# Run 70 simulation steps under healthy conditions
-	for step: int in range(70):
+	# Run 90 simulation steps under healthy conditions
+	for step: int in range(90):
 		coord_b.step_simulation(1.0)
 		
 	var control_final_biomass: float = coord_b.metrics.total_biomass

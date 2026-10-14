@@ -519,3 +519,30 @@ es://presentation/ui/hud.gd):**
   - Added 4 contract tests covering 5-trait bounds, strict $\pm 5\%$ mutation limits, Mendelian sexual recombination, causal behavioral impact (grazing rate and strike range), multi-generation numerical stability (50 ticks without NaN or population runaway), and Schema v2 $\to$ v3 migration roundtrip.
   - All 16 contract test suites: **82 Passed, 0 Failed**.
   - Release smoke tests: **7/7 Passed**.
+
+### BLOCK 3 — Atmosphere, Precipitation and Wet Surfaces (COMPLETED)
+- **AtmosphereDirector Architecture (`presentation/environment/atmosphere_director.gd`):**
+  - Subclassed from `WeatherEffectsController` to preserve a single source of truth without duplicating weather state logic.
+  - Dynamically binds and updates `GPUParticles3D` rain and conditional alpine snow volumes, camera tracking, and shader uniforms.
+- **Camera-Anchored Precipitation Budget:**
+  - `GPUParticles3D` rain volume anchored to camera position (both Flycam and First-Person Walker modes), eliminating global particle waste.
+  - Slanted falling trajectories reacting dynamically to 2D wind vector and effective gust speed ($0.08 \cdot \text{eff\_wind}$).
+  - Particle budgets strictly constrained by `GraphicsPresets`: Low (160 rain, 60 snow), Balanced / Iris Xe (350 rain, 120 snow), High (550 rain, 200 snow).
+  - Zero allocation/free of particle nodes in runtime `_process()` frames.
+- **Conditional Alpine Flurries:**
+  - Alpine snow flurries emit exclusively under freezing altitude/temperature conditions ($y \ge 11.0\text{m}$ or $T \le 2.0^\circ\text{C}$) during precipitation states.
+  - Prevents blanket island-wide snow without proper seasonal/thermal support.
+- **Vegetation Wind & Wetness Coupling:**
+  - Upgraded `TreePine` (`presentation/props/tree_pine.gd`) to utilize a static shared `ShaderMaterial` instance of `foliage_wind.gdshader`.
+  - All 55 trees and MultiMesh grass patches receive global wind vector (`wind_dir`, `wind_speed`) and surface wetness uniforms directly from `AtmosphereDirector`, causing synchronized organic swaying and wet specular sheen with zero additional draw calls.
+- **Terrain Surface Wetness Dynamics:**
+  - `IslandTerrain` surface wetness parameter accumulates gradually during rain ($\le 1.0$) and naturally evaporates/dries when rain ceases.
+  - Affects roughness, specular highlights, and color tinting on terrain mesh.
+- **Ecological Precipitation Coupling:**
+  - `EnvironmentalGrid` cell moisture directly replenished by precipitation without mutating existing data units ($0.05 \to 1.0$).
+  - RNG stream isolation maintained: weather updates do not perturb the `ecology` random stream determinism.
+- **Verification & Acceptance:**
+  - Comprehensive contract test suite in `tests/test_weather_and_surface.gd` expanded to 8 tests.
+  - Full automated contract test suite (`test_runner.gd`): **85 Passed, 0 Failed**.
+  - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
+  - Reproducible benchmark harness (`tests/benchmark_suite.gd`): Target Workload 51.6 Avg FPS, 10.38 ms avg frame time on Intel Iris Xe.

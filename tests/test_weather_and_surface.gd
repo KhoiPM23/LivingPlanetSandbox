@@ -1,12 +1,14 @@
 class_name TestWeatherAndSurface
 extends RefCounted
 
+const AtmosphereDirectorScript = preload("res://presentation/environment/atmosphere_director.gd")
+
 ## Automated verification suite for Weather, Wind Vector Dynamics,
 ## Terrain Surface Wetness Reactions, and Weather-Fauna Causal Modulations.
 
 func run_all_tests() -> Dictionary:
 	var results: Dictionary = {
-		"total": 5,
+		"total": 8,
 		"passed": 0,
 		"failed": 0,
 		"errors": []
@@ -17,6 +19,9 @@ func run_all_tests() -> Dictionary:
 	_run_test("test_shader_wind_and_water_coupling", Callable(self, "test_shader_wind_and_water_coupling"), results)
 	_run_test("test_fauna_weather_speed_modulation", Callable(self, "test_fauna_weather_speed_modulation"), results)
 	_run_test("test_weather_persistence_roundtrip", Callable(self, "test_weather_persistence_roundtrip"), results)
+	_run_test("test_atmosphere_precipitation_and_snow_condition", Callable(self, "test_atmosphere_precipitation_and_snow_condition"), results)
+	_run_test("test_tree_and_grass_wind_coupling", Callable(self, "test_tree_and_grass_wind_coupling"), results)
+	_run_test("test_ecological_precipitation_and_rng_isolation", Callable(self, "test_ecological_precipitation_and_rng_isolation"), results)
 
 	return results
 
@@ -220,6 +225,144 @@ func test_weather_persistence_roundtrip() -> bool:
 	if absf(restored_weather.gust_intensity - 0.65) > 0.05:
 		return false
 	if restored_weather.wind_direction.distance_to(weather.wind_direction) > 0.05:
+		return false
+
+	return true
+
+func test_atmosphere_precipitation_and_snow_condition() -> bool:
+	var weather: WeatherSystem = WeatherSystem.new()
+	var terrain: IslandTerrain = IslandTerrain.new()
+	terrain.generate_island(1337)
+
+	var camera: Camera3D = Camera3D.new()
+	camera.position = Vector3(0.0, 3.0, 0.0)
+
+	var director: WeatherEffectsController = AtmosphereDirectorScript.new()
+	director.setup(weather, terrain, null, null, camera)
+
+	# 1. Clear weather: neither rain nor snow should emit
+	weather.set_state(WeatherSystem.WeatherState.CLEAR, 60.0)
+	director._process(0.5)
+	if director.is_rain_emitting() or director.is_snow_emitting():
+		director.free()
+		camera.free()
+		terrain.free()
+		return false
+
+	# 2. Rain weather at sea-level (y = 3.0): rain emits, snow does not
+	weather.set_state(WeatherSystem.WeatherState.RAIN, 60.0)
+	director._process(0.5)
+	if not director.is_rain_emitting() or director.is_snow_emitting():
+		director.free()
+		camera.free()
+		terrain.free()
+		return false
+
+	# 3. Alpine summit condition (camera moves to y = 14.5): snow flurries emit, rain stops
+	camera.position = Vector3(-24.0, 14.5, -24.0)
+	director._process(0.5)
+	if not director.is_snow_emitting() or director.is_rain_emitting():
+		director.free()
+		camera.free()
+		terrain.free()
+		return false
+
+	# 4. Drought: all precipitation ceases immediately
+	weather.set_state(WeatherSystem.WeatherState.DROUGHT, 60.0)
+	director._process(0.5)
+	if director.is_rain_emitting() or director.is_snow_emitting():
+		director.free()
+		camera.free()
+		terrain.free()
+		return false
+
+	director.free()
+	camera.free()
+	terrain.free()
+	return true
+
+func test_tree_and_grass_wind_coupling() -> bool:
+	var weather: WeatherSystem = WeatherSystem.new()
+	weather.set_state(WeatherSystem.WeatherState.RAIN, 60.0)
+	weather.wind_direction = Vector2(0.6, 0.8).normalized()
+	weather.wind_speed = 5.0
+	weather.wind_gust = 1.2
+
+	var terrain: IslandTerrain = IslandTerrain.new()
+	terrain.generate_island(1337)
+	terrain.set_surface_wetness(0.65)
+
+	var director: WeatherEffectsController = AtmosphereDirectorScript.new()
+	director.setup(weather, terrain)
+	director._process(0.5)
+
+	# Verify TreePine shared foliage material received wind & wetness parameters
+	var tree_fol_mat: ShaderMaterial = TreePine.get_shared_foliage_material()
+	if tree_fol_mat == null:
+		director.free()
+		terrain.free()
+		return false
+
+	var tree_wind_dir: Vector2 = tree_fol_mat.get_shader_parameter("wind_dir")
+	var tree_wind_spd: float = float(tree_fol_mat.get_shader_parameter("wind_speed"))
+	var tree_wetness: float = float(tree_fol_mat.get_shader_parameter("wetness"))
+
+	if tree_wind_dir.distance_to(weather.get_wind_direction()) > 0.05:
+		director.free()
+		terrain.free()
+		return false
+	if tree_wind_spd < 1.5:
+		director.free()
+		terrain.free()
+		return false
+	if absf(tree_wetness - 0.65) > 0.15:
+		director.free()
+		terrain.free()
+		return false
+
+	director.free()
+	terrain.free()
+	return true
+
+func test_ecological_precipitation_and_rng_isolation() -> bool:
+	var seed_obj: WorldSeed = WorldSeed.new(882233)
+	var eco_rng: RandomNumberGenerator = seed_obj.get_stream("ecology")
+	var sample_before: float = eco_rng.randf()
+
+	# Re-create seed and stream
+	var seed_check: WorldSeed = WorldSeed.new(882233)
+	var weather_stream: RandomNumberGenerator = seed_check.get_stream("weather")
+	var weather: WeatherSystem = WeatherSystem.new(weather_stream)
+
+	# Multiple weather transitions and steps
+	for i in range(20):
+		weather.update(1.0)
+
+	# Ecology stream on seed_check must remain completely isolated and reproducible
+	var eco_rng_after: RandomNumberGenerator = seed_check.get_stream("ecology")
+	var sample_after: float = eco_rng_after.randf()
+	if not is_equal_approx(sample_before, sample_after):
+		return false
+
+	# Test ecological moisture replenishment during RAIN
+	var config: WorldGenerationConfig = WorldGenerationConfig.new(882233)
+	var grid: EnvironmentalGrid = EnvironmentalGrid.new(config)
+
+	# Measure starting interior moisture
+	var initial_cell: Dictionary = grid.get_environment_at(0.0, 0.0)
+	var initial_moisture: float = float(initial_cell.get("moisture", 0.5))
+
+	# Run 8 simulated seconds of rain
+	weather.set_state(WeatherSystem.WeatherState.RAIN, 60.0)
+	for i in range(8):
+		grid.step_simulation(1.0, 0.5, weather)
+
+	var rain_cell: Dictionary = grid.get_environment_at(0.0, 0.0)
+	var rain_moisture: float = float(rain_cell.get("moisture", 0.5))
+
+	if rain_moisture <= initial_moisture:
+		return false
+	if rain_moisture > 1.0 or rain_moisture < 0.05:
 		return false
 
 	return true
