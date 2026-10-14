@@ -72,12 +72,17 @@ func get_height_at(x: float, z: float) -> float:
 	# Secondary mountain ridge accent
 	var n_ridge: float = abs(_noise.get_noise_2d(x * 1.8 + 100.0, z * 1.8 + 100.0))
 
-	# Prominent summit peak in north-west quadrant centered at (-24.0, -24.0)
+	# Prominent summit peak in north-west quadrant centered at (-24.0, -24.0) with geological strata
 	var peak_dist: float = Vector2(x - (-24.0), z - (-24.0)).length()
 	var peak_feature: float = exp(-pow(peak_dist / 22.0, 2.0)) * 14.0
+	var stratified_peak: float = peak_feature + sin(peak_feature * 1.2) * 0.85
 
-	# 3.5m dry land base ensures island interior remains dry meadow/forest above waterline
-	var elevation: float = (3.5 + n_base * 5.0 + n_ridge * 3.0 + peak_feature) * mask
+	# Natural lake cove in south-east quadrant (18.0, 14.0) with water filled basin
+	var lake_dist: float = Vector2(x - 18.0, z - 14.0).length()
+	var lake_carve: float = exp(-pow(lake_dist / 11.0, 2.0)) * 6.5
+
+	# Dramatic landscape formation with bluffs, terraces, and lake cove
+	var elevation: float = (3.2 + n_base * 4.5 + n_ridge * 3.2 + stratified_peak - lake_carve) * mask
 
 	# Submerge edges below water level
 	if dist_from_center > radius * 0.85:
@@ -138,10 +143,10 @@ func _build_terrain_mesh() -> void:
 	mat.set_shader_parameter("ground_normal", load("res://demo/assets/textures/ground037_nrm_rgh.png"))
 	mat.set_shader_parameter("rock_albedo", load("res://demo/assets/textures/rock023_alb_ht.png"))
 	mat.set_shader_parameter("rock_normal", load("res://demo/assets/textures/rock023_nrm_rgh.png"))
-	mat.set_shader_parameter("uv_scale", 0.16)
-	mat.set_shader_parameter("rock_uv_scale", 0.12)
-	mat.set_shader_parameter("slope_threshold", 0.36)
-	mat.set_shader_parameter("slope_blend", 0.16)
+	mat.set_shader_parameter("uv_scale", 0.14)
+	mat.set_shader_parameter("rock_uv_scale", 0.08)
+	mat.set_shader_parameter("slope_threshold", 0.26)
+	mat.set_shader_parameter("slope_blend", 0.12)
 	mat.roughness = 0.85
 	mat.metallic_specular = 0.10
 	_terrain_material = mat

@@ -166,7 +166,16 @@ func _scatter_rocks(terrain: IslandTerrain, rng: RandomNumberGenerator, grid: En
 			continue
 
 		var rock: RockBoulder = RockBoulder.new()
-		rock.rock_scale = rng.randf_range(0.7, 1.8)
+		if y > 5.0:
+			# Mountain ridges and bluffs: large crags
+			rock.rock_scale = rng.randf_range(1.2, 2.4)
+		elif y < 1.8:
+			# Lakeshores and riverbanks: smooth weathered boulders
+			rock.rock_scale = rng.randf_range(0.5, 1.2)
+		else:
+			# Standard meadow boulders
+			rock.rock_scale = rng.randf_range(0.7, 1.7)
+
 		rock.position = Vector3(x, y, z)
 		rock.rotation.y = rng.randf_range(0.0, TAU)
 		rock.rotation.x = rng.randf_range(-0.15, 0.15)
@@ -187,7 +196,11 @@ func _scatter_understory(terrain: IslandTerrain, rng: RandomNumberGenerator, gri
 		var z: float = rng.randf_range(-half_size, half_size)
 		var y: float = terrain.get_height_at(x, z)
 
-		if y < 0.3 or y > 11.0:
+		# Allow shoreline water lilies near water surface
+		var is_water_cove: bool = Vector2(x - 18.0, z - 14.0).length() < 12.0
+		if y < 0.1 and not is_water_cove:
+			continue
+		if y > 11.5:
 			continue
 
 		var env_data: Dictionary = grid.get_environment_at(x, z) if grid else {}
@@ -197,19 +210,32 @@ func _scatter_understory(terrain: IslandTerrain, rng: RandomNumberGenerator, gri
 		# Choose prop based on ecological niche
 		var prop_inst: MeshInstance3D = null
 
-		if moisture > 0.65 and _cached_nature_props.has("mushroom_redGroup") and rng.randf() < 0.30:
+		if (is_water_cove or y < 0.4) and _cached_nature_props.has("lily_large") and rng.randf() < 0.35:
+			# Lake cove / wetland: floating water lilies
+			prop_inst = MeshInstance3D.new()
+			prop_inst.mesh = _cached_nature_props["lily_large"]["mesh"]
+			prop_inst.material_override = _cached_nature_props["lily_large"]["mat"]
+			prop_inst.scale = Vector3.ONE * rng.randf_range(1.1, 1.8)
+			y = maxf(y, 0.04) # Float right on water plane
+		elif moisture > 0.65 and _cached_nature_props.has("mushroom_redGroup") and rng.randf() < 0.28:
 			# Shaded damp grove: mushrooms
 			prop_inst = MeshInstance3D.new()
 			prop_inst.mesh = _cached_nature_props["mushroom_redGroup"]["mesh"]
 			prop_inst.material_override = _cached_nature_props["mushroom_redGroup"]["mat"]
 			prop_inst.scale = Vector3.ONE * rng.randf_range(0.8, 1.4)
-		elif moisture > 0.55 and _cached_nature_props.has("log_large") and rng.randf() < 0.25:
+		elif moisture > 0.55 and _cached_nature_props.has("log_large") and rng.randf() < 0.22:
 			# Forest floor: fallen log
 			prop_inst = MeshInstance3D.new()
 			prop_inst.mesh = _cached_nature_props["log_large"]["mesh"]
 			prop_inst.material_override = _cached_nature_props["log_large"]["mat"]
 			prop_inst.scale = Vector3.ONE * rng.randf_range(0.7, 1.2)
-		elif b_type == BiomeClassifier.BiomeType.TEMPERATE_MEADOW and rng.randf() < 0.40:
+		elif _cached_nature_props.has("plant_bushDetailed") and rng.randf() < 0.30:
+			# Detailed green shrub
+			prop_inst = MeshInstance3D.new()
+			prop_inst.mesh = _cached_nature_props["plant_bushDetailed"]["mesh"]
+			prop_inst.material_override = _cached_nature_props["plant_bushDetailed"]["mat"]
+			prop_inst.scale = Vector3.ONE * rng.randf_range(0.85, 1.4)
+		elif b_type == BiomeClassifier.BiomeType.TEMPERATE_MEADOW and rng.randf() < 0.45:
 			# Sunlit meadow: colorful wildflowers
 			var fk: String = flower_keys[rng.randi() % flower_keys.size()]
 			if _cached_nature_props.has(fk):

@@ -245,14 +245,22 @@ func _update_herbivores(delta: float) -> void:
 		if anim:
 			match h.state:
 				FaunaSimulation.HerbivoreState.RESTING:
+					anim.speed_scale = 1.0
 					_play_anim(anim, "Idle_Headlow", 0.35)
 				FaunaSimulation.HerbivoreState.EATING:
+					anim.speed_scale = 1.0
 					_play_anim(anim, "Eating", 0.20)
 				FaunaSimulation.HerbivoreState.FLEEING:
+					var speed_flee: float = h.velocity.length()
+					anim.speed_scale = clampf(speed_flee / 4.2, 0.9, 1.6)
 					_play_anim(anim, "Gallop", 0.15)
 				FaunaSimulation.HerbivoreState.STARVING:
+					var speed_starve: float = h.velocity.length()
+					anim.speed_scale = clampf(speed_starve / 2.2, 0.6, 1.2) if is_moving else 1.0
 					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
 				_: # WANDERING, FORAGING
+					var speed_walk: float = h.velocity.length()
+					anim.speed_scale = clampf(speed_walk / 2.5, 0.7, 1.4) if is_moving else 1.0
 					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
 		else:
 			# Fallback bobbing if using primitive models
@@ -265,9 +273,9 @@ func _update_herbivores(delta: float) -> void:
 
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
 
-		# Smooth natural rotation toward travel direction
+		# Smooth natural rotation toward travel direction (GLTF forward is -Z)
 		if is_moving:
-			var target_rot_y: float = atan2(h.velocity.x, h.velocity.z)
+			var target_rot_y: float = atan2(-h.velocity.x, -h.velocity.z) if anim != null else atan2(h.velocity.x, h.velocity.z)
 			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
 
 		# Phenotypic trait scale
@@ -305,14 +313,22 @@ func _update_predators(delta: float) -> void:
 		if anim:
 			match p.state:
 				FaunaSimulation.PredatorState.RESTING:
+					anim.speed_scale = 1.0
 					_play_anim(anim, "Idle_2_HeadLow", 0.35)
 				FaunaSimulation.PredatorState.EATING:
+					anim.speed_scale = 1.0
 					_play_anim(anim, "Eating", 0.20)
 				FaunaSimulation.PredatorState.HUNTING:
+					var speed_hunt: float = p.velocity.length()
+					anim.speed_scale = clampf(speed_hunt / 4.8, 0.9, 1.6)
 					_play_anim(anim, "Gallop", 0.15)
 				FaunaSimulation.PredatorState.STARVING:
+					var speed_starve: float = p.velocity.length()
+					anim.speed_scale = clampf(speed_starve / 2.5, 0.6, 1.2) if is_moving else 1.0
 					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
 				_: # WANDERING
+					var speed_walk: float = p.velocity.length()
+					anim.speed_scale = clampf(speed_walk / 2.8, 0.7, 1.4) if is_moving else 1.0
 					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
 		else:
 			var head_node: Node3D = node.get_node_or_null("Head") as Node3D
@@ -325,7 +341,7 @@ func _update_predators(delta: float) -> void:
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
 
 		if is_moving:
-			var target_rot_y: float = atan2(p.velocity.x, p.velocity.z)
+			var target_rot_y: float = atan2(-p.velocity.x, -p.velocity.z) if anim != null else atan2(p.velocity.x, p.velocity.z)
 			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
 
 		var base_scale: float = 0.46

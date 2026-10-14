@@ -44,16 +44,16 @@ func _on_process_frame() -> void:
 	# Shot 1: Toàn cảnh thế giới (World Panorama)
 	if _frame_count == 10:
 		if _camera:
-			_camera.position = Vector3(22.0, 16.0, 32.0)
-			_camera.look_at(Vector3(-10.0, 6.0, -8.0), Vector3.UP)
+			_camera.position = Vector3(28.0, 18.0, 36.0)
+			_camera.look_at(Vector3(-6.0, 5.5, -6.0), Vector3.UP)
 	elif _frame_count == 25:
 		_save_shot("shot_1_world_panorama.png", "1. World Panorama (Flycam Overview)")
 
 	# Shot 2: Cảnh rừng từ góc nhìn người chơi (Forest First-Person)
 	elif _frame_count == 35:
 		if _camera:
-			_camera.position = Vector3(-6.0, 4.2, 2.0)
-			_camera.look_at(Vector3(-18.0, 5.0, -10.0), Vector3.UP)
+			_camera.position = Vector3(-14.0, 5.2, 4.0)
+			_camera.look_at(Vector3(-4.0, 4.8, 10.0), Vector3.UP)
 	elif _frame_count == 50:
 		_save_shot("shot_2_forest_first_person.png", "2. Forest View (First-Person Scale)")
 
@@ -65,13 +65,13 @@ func _on_process_frame() -> void:
 	elif _frame_count == 75:
 		_save_shot("shot_3_meadow_transition.png", "3. Meadow & Forest Transition")
 
-	# Shot 4: Bờ hồ / sông (Shoreline & Water Depth)
+	# Shot 4: Bờ hồ / sông (Shoreline, Lake Cove & Water Depth)
 	elif _frame_count == 85:
 		if _camera:
-			_camera.position = Vector3(8.0, 1.8, 16.0)
-			_camera.look_at(Vector3(0.0, 0.4, 6.0), Vector3.UP)
+			_camera.position = Vector3(25.0, 4.2, 21.0)
+			_camera.look_at(Vector3(18.0, 0.0, 14.0), Vector3.UP)
 	elif _frame_count == 100:
-		_save_shot("shot_4_shoreline_water.png", "4. Shoreline, Wet Sand & Water Reflections")
+		_save_shot("shot_4_shoreline_water.png", "4. Shoreline, Lake Cove & Water Reflections")
 
 	# Shot 5: Cận cảnh model cây, cỏ và vật liệu (Vegetation & PBR Materials Close-up)
 	elif _frame_count == 110:
@@ -114,8 +114,8 @@ func _on_process_frame() -> void:
 			if _bootstrap.weather_system:
 				_bootstrap.weather_system.set_state(WeatherSystem.WeatherState.RAIN, 60.0)
 		if _camera:
-			_camera.position = Vector3(6.0, 3.8, 8.0)
-			_camera.look_at(Vector3(-6.0, 3.0, -2.0), Vector3.UP)
+			_camera.position = Vector3(14.0, 6.5, 18.0)
+			_camera.look_at(Vector3(18.0, 0.0, 14.0), Vector3.UP)
 	elif _frame_count == 210:
 		_save_shot("shot_8_weather_rain_wetness.png", "8. Dynamic Rain Storm, Surface Wetness & Wind Sway")
 

@@ -9,10 +9,10 @@ uniform sampler2D ground_normal : hint_normal, filter_linear_mipmap_anisotropic;
 uniform sampler2D rock_albedo : source_color, filter_linear_mipmap_anisotropic;
 uniform sampler2D rock_normal : hint_normal, filter_linear_mipmap_anisotropic;
 
-uniform float uv_scale : hint_range(0.01, 1.0) = 0.22;
-uniform float rock_uv_scale : hint_range(0.01, 1.0) = 0.15;
-uniform float slope_threshold : hint_range(0.1, 0.9) = 0.36;
-uniform float slope_blend : hint_range(0.02, 0.5) = 0.16;
+uniform float uv_scale : hint_range(0.01, 1.0) = 0.14;
+uniform float rock_uv_scale : hint_range(0.01, 1.0) = 0.08;
+uniform float slope_threshold : hint_range(0.1, 0.9) = 0.26;
+uniform float slope_blend : hint_range(0.02, 0.5) = 0.12;
 
 uniform vec4 sand_color : source_color = vec4(0.85, 0.78, 0.60, 1.0);
 uniform vec4 snow_color : source_color = vec4(0.93, 0.95, 0.99, 1.0);
@@ -48,9 +48,10 @@ void fragment() {
 	vec4 g_albedo_tex = texture(ground_albedo, ground_uv);
 	vec4 g_normal_tex = texture(ground_normal, ground_uv);
 	
-	// Modulate ground albedo with ecological biome vertex color
-	vec3 ground_col = g_albedo_tex.rgb * (v_vertex_color.rgb * 1.45);
-	float ground_rough = mix(0.82, g_normal_tex.a, 0.75);
+	// Natural biome modulation preserving photographic soil & pebble details
+	vec3 biome_tint = mix(vec3(1.0), v_vertex_color.rgb * 1.35, 0.28);
+	vec3 ground_col = g_albedo_tex.rgb * biome_tint;
+	float ground_rough = mix(0.85, g_normal_tex.a, 0.70);
 	
 	// 2. Rock cliff texture (Triplanar projection for steep slopes)
 	vec2 rock_uv_x = v_world_pos.zy * rock_uv_scale;
@@ -72,22 +73,22 @@ void fragment() {
 	vec3 base_col = mix(ground_col, rock_col, rock_factor);
 	float base_rough = mix(ground_rough, rock_rough, rock_factor);
 	
-	// Normal vector combination
-	vec3 base_normal = mix(g_normal_tex.rgb * 2.0 - 1.0, rock_norm_raw * 2.0 - 1.0, rock_factor);
+	// Normal vector blending
+	vec3 base_normal = mix(g_normal_tex.rgb, rock_norm_raw, rock_factor);
 	
-	// 4. Shoreline Sand Blending (near waterline h < 1.2m)
+	// 4. Shoreline Sand Blending (near waterline h < 1.6m)
 	float h = v_world_pos.y;
-	if (h < 1.2) {
-		float sand_factor = clamp((1.2 - h) / 1.1, 0.0, 1.0) * (1.0 - rock_factor * 0.7);
-		base_col = mix(base_col, sand_color.rgb * (g_albedo_tex.rgb * 0.8 + 0.35), sand_factor);
-		base_rough = mix(base_rough, 0.78, sand_factor);
+	if (h < 1.6) {
+		float sand_factor = clamp((1.6 - h) / 1.3, 0.0, 1.0) * (1.0 - rock_factor * 0.7);
+		base_col = mix(base_col, sand_color.rgb * (g_albedo_tex.rgb * 0.75 + 0.35), sand_factor);
+		base_rough = mix(base_rough, 0.65, sand_factor);
 	}
 	
-	// 5. Alpine Summit Snow Blending (elevation > 12.0m)
-	if (h > 12.0) {
-		float snow_factor = clamp((h - 12.0) / 3.5, 0.0, 1.0) * clamp(w_norm.y + 0.25, 0.0, 1.0);
+	// 5. Alpine Summit Snow Blending (elevation > 11.5m)
+	if (h > 11.5) {
+		float snow_factor = clamp((h - 11.5) / 2.8, 0.0, 1.0) * clamp(w_norm.y + 0.3, 0.0, 1.0);
 		base_col = mix(base_col, snow_color.rgb, snow_factor);
-		base_rough = mix(base_rough, 0.65, snow_factor);
+		base_rough = mix(base_rough, 0.55, snow_factor);
 	}
 	
 	// 6. Surface Wetness & Rain Response
@@ -103,5 +104,5 @@ void fragment() {
 	ROUGHNESS = base_rough;
 	METALLIC = 0.02;
 	NORMAL_MAP = base_normal;
-	NORMAL_MAP_DEPTH = mix(0.85, 1.2, rock_factor);
+	NORMAL_MAP_DEPTH = mix(1.1, 1.6, rock_factor);
 }

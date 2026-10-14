@@ -5,6 +5,7 @@ uniform vec4 albedo_top : source_color = vec4(0.35, 0.68, 0.28, 1.0);
 uniform vec4 albedo_bottom : source_color = vec4(0.18, 0.42, 0.16, 1.0);
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap;
 uniform bool use_texture = false;
+uniform bool use_vertex_color = false;
 uniform float roughness : hint_range(0.0, 1.0) = 0.6;
 uniform vec2 wind_dir = vec2(0.85, 0.52);
 uniform float wind_speed : hint_range(0.1, 5.0) = 1.5;
@@ -30,6 +31,11 @@ void fragment() {
 	if (use_texture) {
 		vec4 tex = texture(albedo_texture, UV);
 		base_col = tex.rgb;
+	} else if (use_vertex_color) {
+		base_col = COLOR.rgb;
+	} else if (COLOR.a > 0.05 && (COLOR.r != 1.0 || COLOR.g != 1.0 || COLOR.b != 1.0)) {
+		// Rich vertex colors from 3D models (deep bark and conifer needle colors)
+		base_col = COLOR.rgb;
 	} else {
 		// Gradient from ground to tip
 		float v_gradient = clamp(UV.y, 0.0, 1.0);
@@ -37,7 +43,7 @@ void fragment() {
 	}
 
 	// Wet foliage is slightly darker and specular
-	ALBEDO = mix(base_col, base_col * 0.82, wetness);
-	ROUGHNESS = mix(roughness, 0.22, wetness);
-	SPECULAR = mix(0.15, 0.45, wetness);
+	ALBEDO = mix(base_col, base_col * 0.78, wetness);
+	ROUGHNESS = mix(roughness, 0.18, wetness);
+	SPECULAR = mix(0.15, 0.50, wetness);
 }
