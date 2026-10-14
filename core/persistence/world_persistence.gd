@@ -74,7 +74,8 @@ static func save_complete_world(
 			"grid_size": grid.grid_size,
 			"cell_moistures": cell_moistures,
 			"cell_temperatures": cell_temps,
-			"cell_fertilities": cell_fertilities
+			"cell_fertilities": cell_fertilities,
+			"active_pulses": grid.serialize_pulses()
 		}
 
 	# 2. Weather System
@@ -158,6 +159,9 @@ static func save_complete_world(
 
 		if coordinator.causal_tracker:
 			payload["ecosystem"]["causal_interventions"] = coordinator.causal_tracker.serialize()
+
+		if coordinator.experiment_history:
+			payload["ecosystem"]["experiment_history"] = coordinator.experiment_history.serialize()
 
 	# 4. Entity Registry (backward compatible + general props)
 	if registry:

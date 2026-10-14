@@ -22,7 +22,9 @@ enum ToolMode {
 	HEATWAVE = 8,
 	FROST = 9,
 	SOIL_FERTILIZE = 10,
-	DISASTER_SHOCK = 11
+	DISASTER_SHOCK = 11,
+	MUTATE_POPULATION = 12,
+	CLIMATE_PULSE = 13
 }
 
 @export var camera_path: NodePath
@@ -113,6 +115,8 @@ func get_tool_name(mode: ToolMode) -> String:
 		ToolMode.FROST: return "Frost (-8°C)"
 		ToolMode.SOIL_FERTILIZE: return "Fertilize (Soil)"
 		ToolMode.DISASTER_SHOCK: return "Disaster Shock"
+		ToolMode.MUTATE_POPULATION: return "Mutate (Genes)"
+		ToolMode.CLIMATE_PULSE: return "Pulse (Deluge)"
 		_: return "None"
 
 func set_brush_radius(radius: float) -> void:
@@ -147,6 +151,10 @@ func _update_tool_visual_style() -> void:
 			col = Color(0.1, 1.0, 0.4, 0.85)
 		ToolMode.DISASTER_SHOCK:
 			col = Color(0.95, 0.15, 0.35, 0.85)
+		ToolMode.MUTATE_POPULATION:
+			col = Color(0.85, 0.25, 1.0, 0.85)
+		ToolMode.CLIMATE_PULSE:
+			col = Color(0.15, 0.95, 0.90, 0.85)
 		_:
 			col = Color(0.5, 0.5, 0.5, 0.0)
 	_brush_material.albedo_color = col
@@ -239,6 +247,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_9: set_tool(ToolMode.FROST)
 			KEY_0: set_tool(ToolMode.SOIL_FERTILIZE)
 			KEY_MINUS: set_tool(ToolMode.DISASTER_SHOCK)
+			KEY_EQUAL: set_tool(ToolMode.MUTATE_POPULATION)
+			KEY_SEMICOLON: set_tool(ToolMode.CLIMATE_PULSE)
 			KEY_BRACKETLEFT:
 				set_brush_radius(brush_radius - 2.0)
 				action_feedback.emit("Brush radius: %.1fm" % brush_radius, true)
@@ -278,6 +288,10 @@ func execute_active_tool() -> void:
 			_execute_fertilize()
 		ToolMode.DISASTER_SHOCK:
 			_execute_disaster_shock()
+		ToolMode.MUTATE_POPULATION:
+			_execute_mutate_population()
+		ToolMode.CLIMATE_PULSE:
+			_execute_climate_pulse()
 
 func _execute_inspect() -> void:
 	var result: Dictionary = {
@@ -377,6 +391,8 @@ func _execute_moisture_brush(delta: float) -> void:
 			"cells_affected": affected
 		})
 
+	_record_experiment_history("+Moisture" if delta > 0.0 else "-Moisture", "moisture_brush")
+
 func _execute_heatwave() -> void:
 	if not _bootstrap.environmental_grid:
 		return
@@ -401,6 +417,8 @@ func _execute_heatwave() -> void:
 			"cells_affected": affected
 		})
 
+	_record_experiment_history("Heatwave (+8°C)", "heatwave")
+
 func _execute_frost() -> void:
 	if not _bootstrap.environmental_grid:
 		return
@@ -424,6 +442,8 @@ func _execute_frost() -> void:
 			"pos": _current_hit_point,
 			"cells_affected": affected
 		})
+
+	_record_experiment_history("Frost (-8°C)", "frost")
 
 func _execute_fertilize() -> void:
 	if not _bootstrap.environmental_grid:
@@ -450,6 +470,8 @@ func _execute_fertilize() -> void:
 			"cells_affected": affected
 		})
 
+	_record_experiment_history("Fertilize (Soil)", "fertilize")
+
 func _execute_disaster_shock() -> void:
 	if not _bootstrap.environmental_grid:
 		return
@@ -471,6 +493,82 @@ func _execute_disaster_shock() -> void:
 			"pos": _current_hit_point,
 			"cells_affected": affected
 		})
+
+	_record_experiment_history("Disaster Shock", "disaster_shock")
+
+func _execute_mutate_population() -> void:
+	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator if _bootstrap else null
+	if not coord:
+		return
+	var affected: int = coord.mutate_population_in_area(_current_hit_point, brush_radius)
+	_spawn_tool_pulse(_current_hit_point, Color(0.85, 0.25, 1.0, 0.95), brush_radius)
+
+	var msg: String = "Induced genetic mutation on %d entities in %.1fm radius — Alleles shifted within physiological bounds." % [affected, brush_radius]
+	action_feedback.emit(msg, true)
+
+	if coord.causal_tracker:
+		coord.causal_tracker.record_intervention("mutate_population", _current_hit_point, brush_radius, {"affected": affected})
+
+	_record_experiment_history("Mutate Population", "mutate_population")
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "mutate_population",
+			"pos": _current_hit_point,
+			"radius": brush_radius,
+			"entities_affected": affected
+		})
+
+func _execute_climate_pulse() -> void:
+	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator if _bootstrap else null
+	if not coord:
+		return
+	var pulse: Dictionary = coord.apply_climate_pulse(_current_hit_point, brush_radius, "deluge", 25.0)
+	var affected: int = int(pulse.get("cells_affected", 0))
+	_spawn_tool_pulse(_current_hit_point, Color(0.15, 0.95, 0.90, 0.95), brush_radius)
+
+	var msg: String = "Triggered Climate Pulse (Deluge, 25s) across %d cells — Continuous rainfall & cooling." % affected
+	action_feedback.emit(msg, true)
+
+	if coord.causal_tracker:
+		coord.causal_tracker.record_intervention("climate_pulse", _current_hit_point, brush_radius, {"cells": affected, "duration": 25.0, "type": "deluge"})
+
+	_record_experiment_history("Climate Pulse (Deluge)", "climate_pulse")
+
+	if _bootstrap.world_event_bus:
+		_bootstrap.world_event_bus.publish("player_intervention", {
+			"action": "climate_pulse",
+			"pos": _current_hit_point,
+			"radius": brush_radius,
+			"cells_affected": affected
+		})
+
+func _record_experiment_history(action_name: String, action_type: String) -> void:
+	if not _bootstrap or not _bootstrap.ecosystem_coordinator:
+		return
+	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator
+	if coord.experiment_history and coord.metrics and coord.flora_sim and coord.fauna_sim:
+		var sim_t: float = _bootstrap.world_clock.simulation_time if _bootstrap.world_clock else 0.0
+		var metrics_snap: Dictionary = {
+			"plant_count": coord.flora_sim.get_plant_count(),
+			"total_biomass": coord.metrics.total_biomass,
+			"herbivore_count": coord.fauna_sim.get_herbivore_count(),
+			"predator_count": coord.fauna_sim.get_predator_count(),
+			"avg_speed": coord.metrics.avg_herbivore_speed,
+			"avg_size": coord.metrics.avg_herbivore_size,
+			"avg_efficiency": coord.metrics.avg_herbivore_energy_efficiency,
+			"speed_variance": coord.metrics.allele_speed_variance,
+			"diversity_index": coord.metrics.genetic_diversity_index
+		}
+		coord.experiment_history.record_experiment(
+			action_name,
+			action_type,
+			_current_hit_point,
+			brush_radius,
+			metrics_snap,
+			sim_t,
+			20.0
+		)
 
 func _execute_spawn_plant() -> void:
 	# Validation: Above sea level and on island

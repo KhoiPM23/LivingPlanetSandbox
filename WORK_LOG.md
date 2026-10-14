@@ -583,3 +583,44 @@ es://presentation/ui/hud.gd):**
   - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
   - Multi-tier benchmark suite (`tests/benchmark_suite.gd`): Target Workload **34.7 Avg FPS**, 4.20 ms avg frame time, 11.27 ms p95 on Intel Iris Xe.
 
+### BLOCK 5 — Interactive Ecology Experiments (COMPLETED)
+- **Controlled Population Genetic Intervention (`res://core/ecosystem/genome.gd`, `ecosystem_coordinator.gd`):**
+  - Added `mutate_in_place(rng, mutation_rate, max_mutation_pct)` to `EcosystemGenome` applying in-place mutations bounded within physiological constraints (`size: [0.60, 1.50]`, `speed: [0.60, 1.50]`, `sense_range: [14.0, 48.0]`, `energy_efficiency: [0.65, 1.45]`, `foraging/predation: [0.60, 1.50]`).
+  - Advances generation counter and slightly shifts visual coat/foliage pigment.
+  - Implemented `mutate_population_in_area(center, radius)` on `EcosystemCoordinator`, allowing players to target a subpopulation without direct numerical typing or god-mode arbitrary trait editing.
+  - Added `ToolMode.MUTATE_POPULATION = 12` (`[=] Mutate`) to `PlayerToolController` with violet indicator pulse (`Color(0.85, 0.25, 1.0, 0.95)`). Immediate recalculation of herd trait means and variances.
+- **Finite Climate Pulses & Micro-Climate Control (`res://core/environment/environmental_grid.gd`, `ecosystem_coordinator.gd`):**
+  - Added structured finite climate pulses: `trigger_climate_pulse(center_x, center_z, radius, pulse_type, duration)` with discrete active pulse tracking and duration countdowns.
+  - Supports continuous physical pressure over time:
+    - `"deluge"`: continuous moisture replenishment (+0.06/s) and ambient cooling (-0.4°C/s).
+    - `"heat_pulse"`: continuous thermal stress (+1.2°C/s) and evaporation drying (-0.03/s).
+    - `"cold_snap"`: continuous frost necrosis chill (-1.2°C/s).
+  - Pulses automatically expire after elapsed time and cells relax back to equilibrium.
+  - Added `ToolMode.CLIMATE_PULSE = 13` (`[;] Deluge Pulse`) in `PlayerToolController` with cyan indicator ring (`Color(0.15, 0.95, 0.90, 0.95)`).
+- **Scientific Experiment History & Before/After Comparison (`res://core/ecosystem/experiment_history.gd`):**
+  - Designed `ExperimentHistory` module tracking world seed, initial conditions baseline (plant count, biomass, herbivore count, predator count, mean speed, diversity index), and rolling experiment records.
+  - Auto-evaluates ecological outcomes after configurable delay (e.g. 20.0s simulation time) by computing percentage deltas:
+    - Biomass and flora population changes (`% diff`).
+    - Fauna mortality and starvation counts.
+    - Genetic trait variance and diversity index shifts (`% diff`).
+  - Added manual checkpoint snapshot functionality: `create_manual_checkpoint(label, metrics, sim_time)`.
+  - Full lossless serialization roundtrip via `WorldPersistence` Schema v3 and `WorldBootstrap`.
+- **Selection, Inspection & UI Observability (`res://presentation/ui/hud.gd`):**
+  - Inspector card now computes and displays exact relative deviations of an individual's traits compared to the living herd/pack population average (e.g. `Speed: 1.15x (+15% vs herd avg)`).
+  - Expanded right panel with a dedicated 4th tab: **`Experiments`**, displaying the session's initial baseline, a snapshot trigger button, and a scrollable feed of evaluated experiment cards.
+  - Expanded left toolbar with buttons for `[=] Mutate` and `[;] Deluge Pulse` (13 tools total).
+  - Updated bottom hint bar with new keybindings.
+- **Simulation Clock & Event Robustness (`res://core/clock/world_clock.gd`):**
+  - Added float epsilon tolerance in `WorldClock.advance()` to eliminate IEEE-754 binary floating-point truncation when accumulating simulation tick deltas.
+  - Verified `WorldEventBus` continues processing and delivering events when simulation is paused.
+- **Verification & Acceptance:**
+  - Added 4 contract tests to `tests/test_causal_experiment_tools.gd`:
+    1. `test_controlled_population_mutation_and_telemetry`: Verifies in-place bounded mutations, generation advancement, and immediate variance/diversity updates.
+    2. `test_climate_pulse_dynamics_and_lifecycle`: Verifies finite duration, continuous moisture replenishment, and automatic cleanup.
+    3. `test_experiment_history_tracking_and_comparison`: Verifies baseline capture, delayed auto-evaluation, summary deltas, and lossless serialization roundtrip.
+    4. `test_simulation_clock_controls_and_event_processing`: Verifies pause freezing ticks, time-scale multipliers, and event bus delivery during pause.
+  - Automated contract test suite (`test_runner.gd`): **92 Passed across 16 suites, 0 Failed**.
+  - Standalone release smoke test (`test_release_smoke.gd`): **7/7 Passed**.
+  - Multi-tier benchmark suite (`tests/benchmark_suite.gd`): Target Workload **35.4 Avg FPS**, 4.42 ms avg frame time, 17.83 ms p95 on Intel Iris Xe.
+
+

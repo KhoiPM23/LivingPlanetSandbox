@@ -10,6 +10,8 @@ var _config: WorldGenerationConfig
 var _cells: Array[Dictionary] = []
 var _cell_size: float = 5.0
 var _half_world: float = 80.0
+var _active_pulses: Array[Dictionary] = []
+var _pulse_id_counter: int = 1
 
 func _init(config: WorldGenerationConfig = null) -> void:
 	_config = config if config != null else WorldGenerationConfig.new()
@@ -122,6 +124,39 @@ func step_simulation(delta_time: float, day_phase: float, weather: WeatherSystem
 		
 		# 5. Re-classify Biome based on current state
 		cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], elev, _config.water_level)
+
+	# 6. Step active finite climate pulses
+	var pulse_idx: int = _active_pulses.size() - 1
+	while pulse_idx >= 0:
+		var p: Dictionary = _active_pulses[pulse_idx]
+		p["remaining"] = float(p.get("remaining", 0.0)) - delta_time
+		var p_rad_sq: float = float(p.get("radius", 12.0)) * float(p.get("radius", 12.0))
+		var p_cx: float = float(p.get("center_x", 0.0))
+		var p_cz: float = float(p.get("center_z", 0.0))
+		var p_type: String = str(p.get("type", "deluge"))
+
+		for i in range(_cells.size()):
+			var cell: Dictionary = _cells[i]
+			var dx: float = cell["world_x"] - p_cx
+			var dz: float = cell["world_z"] - p_cz
+			var d_sq: float = dx * dx + dz * dz
+			if d_sq <= p_rad_sq:
+				var falloff: float = 1.0 - (sqrt(d_sq) / maxf(sqrt(p_rad_sq), 0.001))
+				var rate_factor: float = (0.5 + 0.5 * falloff) * delta_time
+				match p_type:
+					"deluge":
+						cell["moisture"] = clampf(cell["moisture"] + 0.06 * rate_factor, 0.05, 1.0)
+						cell["temperature"] = clampf(cell["temperature"] - 0.4 * rate_factor, -25.0, 50.0)
+					"heat_pulse":
+						cell["temperature"] = clampf(cell["temperature"] + 1.2 * rate_factor, -25.0, 50.0)
+						cell["moisture"] = clampf(cell["moisture"] - 0.03 * rate_factor, 0.05, 1.0)
+					"cold_snap":
+						cell["temperature"] = clampf(cell["temperature"] - 1.2 * rate_factor, -25.0, 50.0)
+				cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
+
+		if float(p.get("remaining", 0.0)) <= 0.0:
+			_active_pulses.remove_at(pulse_idx)
+		pulse_idx -= 1
 
 func sample_at(world_x: float, world_z: float) -> Dictionary:
 	var gx: int = clampi(int((world_x + _half_world) / _cell_size), 0, grid_size - 1)
@@ -246,4 +281,51 @@ func restore_cell_data(moistures: Array, temps: Array = [], fertilities: Array =
 		if i < fertilities.size():
 			cell["fertility"] = clampf(float(fertilities[i]), 0.2, 3.0)
 		cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
+
+## Triggers a finite climate pulse with defined duration, scope, and continuous physical effects.
+func trigger_climate_pulse(center_x: float, center_z: float, radius: float, pulse_type: String = "deluge", duration: float = 25.0) -> Dictionary:
+	var pulse_data: Dictionary = {
+		"id": _pulse_id_counter,
+		"center_x": center_x,
+		"center_z": center_z,
+		"radius": radius,
+		"type": pulse_type,
+		"duration": duration,
+		"remaining": duration,
+		"cells_affected": 0
+	}
+	_pulse_id_counter += 1
+
+	var rad_sq: float = radius * radius
+	var affected: int = 0
+	for i in range(_cells.size()):
+		var cell: Dictionary = _cells[i]
+		var dx: float = cell["world_x"] - center_x
+		var dz: float = cell["world_z"] - center_z
+		if (dx * dx + dz * dz) <= rad_sq:
+			affected += 1
+	pulse_data["cells_affected"] = affected
+	_active_pulses.append(pulse_data)
+	return pulse_data
+
+func get_active_pulses() -> Array[Dictionary]:
+	return _active_pulses
+
+func get_active_pulse_count() -> int:
+	return _active_pulses.size()
+
+func clear_pulses() -> void:
+	_active_pulses.clear()
+
+func serialize_pulses() -> Array[Dictionary]:
+	var res: Array[Dictionary] = []
+	for p in _active_pulses:
+		res.append(p.duplicate())
+	return res
+
+func deserialize_pulses(data: Array) -> void:
+	_active_pulses.clear()
+	for item in data:
+		if item is Dictionary:
+			_active_pulses.append(item.duplicate())
 

@@ -57,7 +57,7 @@ func advance(delta: float) -> int:
 	# Cap max ticks per frame to prevent spiral of death during lag spikes
 	var max_ticks_per_frame: int = 5
 	
-	while _accumulator >= tick_delta and executed_ticks < max_ticks_per_frame:
+	while (_accumulator + 0.00001) >= tick_delta and executed_ticks < max_ticks_per_frame:
 		_accumulator -= tick_delta
 		tick_count += 1
 		simulation_time += tick_delta

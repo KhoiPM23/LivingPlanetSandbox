@@ -4,6 +4,8 @@ extends CanvasLayer
 ## Comprehensive experiment tools HUD & Observability dashboard for Living Planet Sandbox.
 ## Displays real-time simulation metrics, live population chart, inspector, event log, tool palette, and toasts.
 
+const ExperimentHistory = preload("res://core/ecosystem/experiment_history.gd")
+
 @export var bootstrap_path: NodePath = ".."
 @export var camera_path: NodePath
 @export var tool_controller_path: NodePath
@@ -53,6 +55,12 @@ const MAX_EVENT_LOG: int = 40
 var _toast_panel: PanelContainer
 var _toast_label: Label
 var _toast_timer: float = 0.0
+
+# Experiments History Tab
+var _exp_baseline_label: Label
+var _exp_records_vbox: VBoxContainer
+var _exp_scroll: ScrollContainer
+var _exp_refresh_timer: float = 0.0
 
 # Bottom Bar
 var _bottom_bar: PanelContainer
@@ -294,7 +302,7 @@ func _build_left_toolbar() -> void:
 	_toolbar_panel.offset_left = 12.0
 	_toolbar_panel.offset_top = 58.0
 	_toolbar_panel.offset_right = 145.0
-	_toolbar_panel.offset_bottom = 450.0
+	_toolbar_panel.offset_bottom = 505.0
 
 	var style: StyleBoxFlat = _create_glass_style(Color(0.05, 0.08, 0.13, 0.88), Color(0.22, 0.42, 0.62, 0.6), 6)
 	_toolbar_panel.add_theme_stylebox_override("panel", style)
@@ -320,7 +328,9 @@ func _build_left_toolbar() -> void:
 		{"mode": PlayerToolController.ToolMode.HEATWAVE, "label": "[8] Heatwave"},
 		{"mode": PlayerToolController.ToolMode.FROST, "label": "[9] Frost"},
 		{"mode": PlayerToolController.ToolMode.SOIL_FERTILIZE, "label": "[0] Fertilize"},
-		{"mode": PlayerToolController.ToolMode.DISASTER_SHOCK, "label": "[-] Disaster"}
+		{"mode": PlayerToolController.ToolMode.DISASTER_SHOCK, "label": "[-] Disaster"},
+		{"mode": PlayerToolController.ToolMode.MUTATE_POPULATION, "label": "[=] Mutate"},
+		{"mode": PlayerToolController.ToolMode.CLIMATE_PULSE, "label": "[;] Deluge Pulse"}
 	]
 
 	for t in tools_def:
@@ -449,6 +459,40 @@ func _build_right_observability_panel() -> void:
 
 	_tab_container.add_child(tab_events)
 
+	# --- TAB 4: EXPERIMENTS HISTORY ---
+	var tab_exp: VBoxContainer = VBoxContainer.new()
+	tab_exp.name = "Experiments"
+	tab_exp.add_theme_constant_override("separation", 6)
+
+	var exp_title: Label = Label.new()
+	exp_title.text = "ECOLOGICAL EXPERIMENT LOG"
+	exp_title.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
+	exp_title.add_theme_font_size_override("font_size", 10)
+	tab_exp.add_child(exp_title)
+
+	_exp_baseline_label = Label.new()
+	_exp_baseline_label.text = "Initial Baseline: Gathering..."
+	_exp_baseline_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_exp_baseline_label.add_theme_font_size_override("font_size", 10)
+	_exp_baseline_label.add_theme_color_override("font_color", Color(0.75, 0.88, 1.0))
+	tab_exp.add_child(_exp_baseline_label)
+
+	var snap_btn: Button = Button.new()
+	snap_btn.text = "📷 Record Checkpoint Snapshot"
+	snap_btn.custom_minimum_size = Vector2(280, 22)
+	snap_btn.add_theme_font_size_override("font_size", 10)
+	snap_btn.pressed.connect(_on_create_manual_checkpoint_pressed)
+	tab_exp.add_child(snap_btn)
+
+	_exp_scroll = ScrollContainer.new()
+	_exp_scroll.custom_minimum_size = Vector2(290, 210)
+	_exp_records_vbox = VBoxContainer.new()
+	_exp_records_vbox.add_theme_constant_override("separation", 4)
+	_exp_scroll.add_child(_exp_records_vbox)
+	tab_exp.add_child(_exp_scroll)
+
+	_tab_container.add_child(tab_exp)
+
 	_right_panel.add_child(_tab_container)
 	_container.add_child(_right_panel)
 
@@ -498,7 +542,7 @@ func _build_bottom_hint_bar() -> void:
 	_bottom_bar.add_theme_stylebox_override("panel", style)
 
 	var hint: Label = Label.new()
-	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [1-0] Tools | [Esc] Menu"
+	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [1-0,=,;] Tools | [Esc] Menu"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.85))
@@ -1000,10 +1044,95 @@ func _process(delta: float) -> void:
 			wet_pct = int(terrain.get_surface_wetness() * 100.0)
 		_weather_telemetry_label.text = "💨 %s %.1fm/s | 💧 %d%%" % [cardinal, eff_wind, wet_pct]
 
+	# Update Experiment History Tab periodically (1.0s throttle)
+	_exp_refresh_timer += delta
+	if _exp_refresh_timer >= 1.0:
+		_exp_refresh_timer = 0.0
+		_update_experiment_tab_ui()
+
 
 # =========================================================================
 # EVENT HANDLERS & CALLBACKS
 # =========================================================================
+func _update_experiment_tab_ui() -> void:
+	if not _bootstrap or not _bootstrap.ecosystem_coordinator:
+		return
+	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator
+	if not coord.experiment_history:
+		return
+	var hist: ExperimentHistory = coord.experiment_history
+	var base: Dictionary = hist.get_initial_baseline()
+	if not base.is_empty() and _exp_baseline_label:
+		_exp_baseline_label.text = "Baseline (Seed %d):\nFlora: %d (%.0fkg) | Deer: %d | Stalker: %d\nAvg Spd: %.2f | Div: %.2f" % [
+			base.get("seed", 1337),
+			base.get("plant_count", 0),
+			base.get("plant_biomass", 0.0),
+			base.get("herbivore_count", 0),
+			base.get("predator_count", 0),
+			base.get("avg_speed", 1.0),
+			base.get("diversity_index", 0.0)
+		]
+
+	if _exp_records_vbox:
+		var exps: Array[Dictionary] = hist.get_experiments()
+		for ch in _exp_records_vbox.get_children():
+			ch.queue_free()
+
+		if exps.is_empty():
+			var empty_lbl: Label = Label.new()
+			empty_lbl.text = "No interventions logged yet.\nUse experiment tools (Heatwave, Deluge, Mutate, etc.) to record before/after outcomes."
+			empty_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+			empty_lbl.add_theme_font_size_override("font_size", 10)
+			empty_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8))
+			_exp_records_vbox.add_child(empty_lbl)
+		else:
+			for i in range(exps.size() - 1, -1, -1):
+				var r: Dictionary = exps[i]
+				var panel: PanelContainer = PanelContainer.new()
+				var p_style: StyleBoxFlat = _create_glass_style(Color(0.06, 0.10, 0.16, 0.85), Color(0.25, 0.45, 0.65, 0.5), 4)
+				panel.add_theme_stylebox_override("panel", p_style)
+
+				var v: VBoxContainer = VBoxContainer.new()
+				v.add_theme_constant_override("separation", 2)
+
+				var title_lbl: Label = Label.new()
+				title_lbl.text = "#%d [%s] %s" % [r.get("id", 0), r.get("time_formatted", "00:00"), r.get("name", "Tool")]
+				title_lbl.add_theme_font_size_override("font_size", 10)
+				title_lbl.add_theme_color_override("font_color", Color(0.35, 0.90, 1.0))
+				v.add_child(title_lbl)
+
+				var sum_lbl: Label = Label.new()
+				sum_lbl.text = r.get("summary", "")
+				sum_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+				sum_lbl.add_theme_font_size_override("font_size", 9)
+				var status_col: Color = Color(0.4, 0.95, 0.55) if r.get("is_evaluated", false) else Color(1.0, 0.8, 0.3)
+				sum_lbl.add_theme_color_override("font_color", status_col)
+				v.add_child(sum_lbl)
+
+				panel.add_child(v)
+				_exp_records_vbox.add_child(panel)
+
+func _on_create_manual_checkpoint_pressed() -> void:
+	if not _bootstrap or not _bootstrap.ecosystem_coordinator:
+		return
+	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator
+	if coord.experiment_history and coord.metrics and coord.flora_sim and coord.fauna_sim:
+		var sim_t: float = _bootstrap.world_clock.simulation_time if _bootstrap.world_clock else 0.0
+		var m_snap: Dictionary = {
+			"plant_count": coord.flora_sim.get_plant_count(),
+			"total_biomass": coord.metrics.total_biomass,
+			"herbivore_count": coord.fauna_sim.get_herbivore_count(),
+			"predator_count": coord.fauna_sim.get_predator_count(),
+			"avg_speed": coord.metrics.avg_herbivore_speed,
+			"avg_size": coord.metrics.avg_herbivore_size,
+			"avg_efficiency": coord.metrics.avg_herbivore_energy_efficiency,
+			"speed_variance": coord.metrics.allele_speed_variance,
+			"diversity_index": coord.metrics.genetic_diversity_index
+		}
+		coord.experiment_history.create_manual_checkpoint("Manual Checkpoint", m_snap, sim_t)
+		show_toast("Captured ecological checkpoint snapshot", true)
+		_update_experiment_tab_ui()
+
 func _on_tool_button_pressed(mode: PlayerToolController.ToolMode) -> void:
 	if _tool_controller:
 		_tool_controller.set_tool(mode)
@@ -1136,10 +1265,29 @@ func _on_inspection_performed(data: Dictionary) -> void:
 			var spd: float = float(genome_dict.get("speed", genome_dict.get("speed_mult", 1.0)))
 			var sn: float = float(genome_dict.get("sense_range", genome_dict.get("perception_radius", 28.0)))
 			var eff: float = float(genome_dict.get("energy_efficiency", genome_dict.get("metabolism_efficiency", 1.0)))
-			txt += "Size Scale:    %.2fx (mass & caps)\n" % sz
-			txt += "Speed Allele:  %.2fx (agility)\n" % spd
+
+			var avg_spd: float = 1.0
+			var avg_sz: float = 1.0
+			var avg_ef: float = 1.0
+			if _bootstrap and _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.metrics:
+				var m: EcosystemMetrics = _bootstrap.ecosystem_coordinator.metrics
+				if type == "HERBIVORE":
+					avg_spd = m.avg_herbivore_speed
+					avg_sz = m.avg_herbivore_size
+					avg_ef = m.avg_herbivore_energy_efficiency
+				elif type == "PREDATOR":
+					avg_spd = m.avg_predator_speed
+					avg_sz = m.avg_predator_size
+					avg_ef = m.avg_predator_energy_efficiency
+
+			var spd_diff_pct: float = ((spd - avg_spd) / maxf(0.01, avg_spd)) * 100.0
+			var sz_diff_pct: float = ((sz - avg_sz) / maxf(0.01, avg_sz)) * 100.0
+			var eff_diff_pct: float = ((eff - avg_ef) / maxf(0.01, avg_ef)) * 100.0
+
+			txt += "Size Scale:    %.2fx (%+.0f%% vs avg)\n" % [sz, sz_diff_pct]
+			txt += "Speed Allele:  %.2fx (%+.0f%% vs avg)\n" % [spd, spd_diff_pct]
 			txt += "Sense Range:   %.1fm (sight/scent)\n" % sn
-			txt += "Metabolism:    %.2fx (efficiency)\n" % eff
+			txt += "Metabolism:    %.2fx (%+.0f%% vs avg)\n" % [eff, eff_diff_pct]
 
 			if genome_dict.has("predation") and float(genome_dict["predation"]) > 0.05:
 				txt += "Predation:     %.2fx (strike prowess)\n" % float(genome_dict["predation"])

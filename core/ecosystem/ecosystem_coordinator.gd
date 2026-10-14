@@ -8,11 +8,13 @@ const FloraSimulation = preload("res://core/ecosystem/flora_simulation.gd")
 const FaunaSimulation = preload("res://core/ecosystem/fauna_simulation.gd")
 const EcosystemMetrics = preload("res://core/ecosystem/ecosystem_metrics.gd")
 const CausalTracker = preload("res://core/ecosystem/causal_tracker.gd")
+const ExperimentHistory = preload("res://core/ecosystem/experiment_history.gd")
 
 var flora_sim: FloraSimulation
 var fauna_sim: FaunaSimulation
 var metrics: EcosystemMetrics
 var causal_tracker: CausalTracker
+var experiment_history: ExperimentHistory
 
 var _rng: RandomNumberGenerator
 var _world_seed: WorldSeed
@@ -46,6 +48,7 @@ func _init(
 	_rng = world_seed.get_stream("ecology") if world_seed != null else RandomNumberGenerator.new()
 	metrics = EcosystemMetrics.new()
 	causal_tracker = CausalTracker.new(world_clock)
+	experiment_history = ExperimentHistory.new(world_clock, world_seed.master_seed if world_seed else 1337)
 	flora_sim = FloraSimulation.new(_rng, entity_registry, metrics, event_bus)
 	fauna_sim = FaunaSimulation.new(_rng, entity_registry, metrics, event_bus)
 
@@ -113,6 +116,23 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 			"herbivores": fauna_sim.get_herbivore_count(),
 			"predators": fauna_sim.get_predator_count()
 		})
+
+	if experiment_history:
+		experiment_history.init_baseline(
+			_world_seed.master_seed if _world_seed else 1337,
+			{
+				"plant_count": flora_sim.get_plant_count(),
+				"total_biomass": metrics.total_biomass,
+				"herbivore_count": fauna_sim.get_herbivore_count(),
+				"predator_count": fauna_sim.get_predator_count(),
+				"avg_speed": metrics.avg_herbivore_speed,
+				"avg_size": metrics.avg_herbivore_size,
+				"avg_efficiency": metrics.avg_herbivore_energy_efficiency,
+				"speed_variance": metrics.allele_speed_variance,
+				"diversity_index": metrics.genetic_diversity_index
+			},
+			_world_clock.simulation_time if _world_clock else 0.0
+		)
 
 func _on_ecosystem_tick(_tick_num: int, _sim_time: float) -> void:
 	if not is_active:
@@ -266,6 +286,19 @@ func step_simulation(delta_sim: float) -> void:
 	if _world_clock and int(_world_clock.tick_count) % 10 == 0:
 		metrics.sample_evolution_snapshot(_world_clock.simulation_time)
 
+	if experiment_history and _world_clock:
+		experiment_history.step(_world_clock.simulation_time, {
+			"plant_count": flora_sim.get_plant_count() if flora_sim else 0,
+			"total_biomass": metrics.total_biomass,
+			"herbivore_count": fauna_sim.get_herbivore_count() if fauna_sim else 0,
+			"predator_count": fauna_sim.get_predator_count() if fauna_sim else 0,
+			"avg_speed": metrics.avg_herbivore_speed,
+			"avg_size": metrics.avg_herbivore_size,
+			"avg_efficiency": metrics.avg_herbivore_energy_efficiency,
+			"speed_variance": metrics.allele_speed_variance,
+			"diversity_index": metrics.genetic_diversity_index
+		})
+
 	if _event_bus:
 		_event_bus.publish("ecosystem_metrics_updated", metrics.to_dict())
 
@@ -311,6 +344,58 @@ func clear() -> void:
 		metrics.reset()
 	if causal_tracker:
 		causal_tracker.clear()
+	if experiment_history:
+		experiment_history.clear()
+
+## Mutates living entities within an area using controlled biological bounds.
+func mutate_population_in_area(center: Vector3, radius: float) -> int:
+	var affected_count: int = 0
+	var rad_sq: float = radius * radius
+
+	if fauna_sim:
+		for h in fauna_sim.get_all_herbivores():
+			if center.distance_squared_to(h.position) <= rad_sq and h.genome:
+				h.genome.mutate_in_place(_rng, 0.65, 0.08)
+				affected_count += 1
+		for p in fauna_sim.get_all_predators():
+			if center.distance_squared_to(p.position) <= rad_sq and p.genome:
+				p.genome.mutate_in_place(_rng, 0.65, 0.08)
+				affected_count += 1
+
+	if flora_sim:
+		for pl in flora_sim.get_all_plants():
+			if center.distance_squared_to(pl.position) <= rad_sq and pl.genome:
+				pl.genome.mutate_in_place(_rng, 0.60, 0.08)
+				affected_count += 1
+
+	# Trigger immediate recalculation of genetic telemetry
+	step_simulation(0.0)
+
+	if _event_bus:
+		_event_bus.publish("population_mutated", {
+			"pos": center,
+			"radius": radius,
+			"affected_count": affected_count
+		})
+
+	return affected_count
+
+## Triggers a finite climate pulse through environmental grid
+func apply_climate_pulse(center: Vector3, radius: float, pulse_type: String = "deluge", duration: float = 25.0) -> Dictionary:
+	var pulse_info: Dictionary = {}
+	if _env_grid:
+		pulse_info = _env_grid.trigger_climate_pulse(center.x, center.z, radius, pulse_type, duration)
+
+	if _event_bus:
+		_event_bus.publish("climate_pulse_triggered", {
+			"pos": center,
+			"radius": radius,
+			"type": pulse_type,
+			"duration": duration,
+			"cells_affected": pulse_info.get("cells_affected", 0)
+		})
+
+	return pulse_info
 
 func _on_plant_died_causal(payload: Variant) -> void:
 	if not causal_tracker or not (payload is Dictionary):

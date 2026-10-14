@@ -158,6 +158,8 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 				env_data.get("cell_temperatures", []),
 				env_data.get("cell_fertilities", [])
 			)
+		if env_data.has("active_pulses"):
+			environmental_grid.deserialize_pulses(env_data["active_pulses"])
 
 	# 5. Restore ecosystem simulation (Schema v2)
 	entity_registry.clear()
@@ -178,6 +180,9 @@ func load_world_state(path: String = WorldPersistence.DEFAULT_SAVE_PATH) -> Erro
 
 		if eco_data.has("causal_interventions") and ecosystem_coordinator.causal_tracker:
 			ecosystem_coordinator.causal_tracker.deserialize(eco_data["causal_interventions"])
+
+		if eco_data.has("experiment_history") and ecosystem_coordinator.experiment_history:
+			ecosystem_coordinator.experiment_history.deserialize(eco_data["experiment_history"])
 
 		if data.has("metrics") and ecosystem_coordinator.metrics:
 			var m_data: Dictionary = data["metrics"]

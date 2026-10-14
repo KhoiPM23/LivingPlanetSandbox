@@ -10,6 +10,7 @@ const FaunaSimulation = preload("res://core/ecosystem/fauna_simulation.gd")
 const EcosystemMetrics = preload("res://core/ecosystem/ecosystem_metrics.gd")
 const EcosystemCoordinator = preload("res://core/ecosystem/ecosystem_coordinator.gd")
 const CausalTracker = preload("res://core/ecosystem/causal_tracker.gd")
+const ExperimentHistory = preload("res://core/ecosystem/experiment_history.gd")
 
 func run_all() -> int:
 	var passed: int = 0
@@ -19,6 +20,10 @@ func run_all() -> int:
 	passed += _test("test_causal_cascade_generation_on_mortality", Callable(self, "test_causal_cascade_generation_on_mortality"))
 	passed += _test("test_fertilizer_growth_acceleration", Callable(self, "test_fertilizer_growth_acceleration"))
 	passed += _test("test_experiment_tools_modes_and_persistence", Callable(self, "test_experiment_tools_modes_and_persistence"))
+	passed += _test("test_controlled_population_mutation_and_telemetry", Callable(self, "test_controlled_population_mutation_and_telemetry"))
+	passed += _test("test_climate_pulse_dynamics_and_lifecycle", Callable(self, "test_climate_pulse_dynamics_and_lifecycle"))
+	passed += _test("test_experiment_history_tracking_and_comparison", Callable(self, "test_experiment_history_tracking_and_comparison"))
+	passed += _test("test_simulation_clock_controls_and_event_processing", Callable(self, "test_simulation_clock_controls_and_event_processing"))
 	return passed
 
 func _test(test_name: String, callable: Callable) -> int:
@@ -202,6 +207,10 @@ func test_experiment_tools_modes_and_persistence() -> String:
 		return "ToolMode.SOIL_FERTILIZE is not 10"
 	if PlayerToolController.ToolMode.DISASTER_SHOCK != 11:
 		return "ToolMode.DISASTER_SHOCK is not 11"
+	if PlayerToolController.ToolMode.MUTATE_POPULATION != 12:
+		return "ToolMode.MUTATE_POPULATION is not 12"
+	if PlayerToolController.ToolMode.CLIMATE_PULSE != 13:
+		return "ToolMode.CLIMATE_PULSE is not 13"
 
 	var tool_ctrl: PlayerToolController = PlayerToolController.new()
 	if not ("Heatwave" in tool_ctrl.get_tool_name(PlayerToolController.ToolMode.HEATWAVE)):
@@ -212,6 +221,10 @@ func test_experiment_tools_modes_and_persistence() -> String:
 		return "Incorrect name for SOIL_FERTILIZE tool"
 	if not ("Disaster" in tool_ctrl.get_tool_name(PlayerToolController.ToolMode.DISASTER_SHOCK)):
 		return "Incorrect name for DISASTER_SHOCK tool"
+	if not ("Mutate" in tool_ctrl.get_tool_name(PlayerToolController.ToolMode.MUTATE_POPULATION)):
+		return "Incorrect name for MUTATE_POPULATION tool"
+	if not ("Pulse" in tool_ctrl.get_tool_name(PlayerToolController.ToolMode.CLIMATE_PULSE)):
+		return "Incorrect name for CLIMATE_PULSE tool"
 	tool_ctrl.free()
 
 	# 2. Test persistence of cell fertilities and causal interventions
@@ -242,6 +255,8 @@ func test_experiment_tools_modes_and_persistence() -> String:
 	var eco_data: Dictionary = loaded_data.get("ecosystem", {})
 	if not eco_data.has("causal_interventions"):
 		return "Loaded save missing causal_interventions section"
+	if not eco_data.has("experiment_history"):
+		return "Loaded save missing experiment_history section"
 
 	var interventions: Array = eco_data["causal_interventions"]
 	if interventions.size() != 1:
@@ -252,5 +267,172 @@ func test_experiment_tools_modes_and_persistence() -> String:
 	# Clean up test save file
 	DirAccess.remove_absolute(save_path)
 	DirAccess.remove_absolute(save_path + ".bak")
+
+	return ""
+
+func test_controlled_population_mutation_and_telemetry() -> String:
+	var seed_obj: WorldSeed = WorldSeed.new(99991)
+	var clock: WorldClock = WorldClock.new(10.0)
+	var reg: EntityRegistry = EntityRegistry.new()
+	var grid: EnvironmentalGrid = EnvironmentalGrid.new(WorldGenerationConfig.new(99991))
+	var weather: WeatherSystem = WeatherSystem.new(seed_obj.get_stream("weather"))
+	var coord: EcosystemCoordinator = EcosystemCoordinator.new(seed_obj, clock, null, reg, grid, weather)
+
+	coord.populate_initial_ecosystem(30, 10, 2)
+	coord.step_simulation(0.1)
+
+	var initial_herbs: Array = coord.fauna_sim.get_all_herbivores()
+	if initial_herbs.is_empty():
+		return "No herbivores spawned in initial ecosystem"
+
+	var initial_gen: int = initial_herbs[0].genome.generation
+
+	# Mutate population in area
+	var affected: int = coord.mutate_population_in_area(Vector3.ZERO, 60.0)
+	if affected <= 0:
+		return "Mutate population affected 0 entities"
+
+	# Verify generation advanced and alleles remain strictly bounded
+	for h in coord.fauna_sim.get_all_herbivores():
+		if h.genome.generation <= initial_gen:
+			return "Herbivore genome generation did not advance after mutation"
+		if h.genome.speed < 0.60 or h.genome.speed > 1.50:
+			return "Herbivore speed out of physiological bounds: %.2f" % h.genome.speed
+		if h.genome.size < 0.60 or h.genome.size > 1.50:
+			return "Herbivore size out of physiological bounds: %.2f" % h.genome.size
+		if h.genome.energy_efficiency < 0.65 or h.genome.energy_efficiency > 1.45:
+			return "Herbivore energy efficiency out of physiological bounds: %.2f" % h.genome.energy_efficiency
+
+	# Verify telemetry variance is valid and non-zero
+	if coord.metrics.allele_speed_variance < 0.0:
+		return "Negative allele speed variance after mutation"
+	if coord.metrics.genetic_diversity_index < 0.0:
+		return "Negative genetic diversity index"
+
+	return ""
+
+func test_climate_pulse_dynamics_and_lifecycle() -> String:
+	var config: WorldGenerationConfig = WorldGenerationConfig.new(77771)
+	var grid: EnvironmentalGrid = EnvironmentalGrid.new(config)
+
+	var center_x: float = 0.0
+	var center_z: float = 0.0
+	var before_cell: Dictionary = grid.sample_at(center_x, center_z)
+	var before_moist: float = before_cell["moisture"]
+	var before_temp: float = before_cell["temperature"]
+
+	# Trigger Deluge climate pulse (5.0s duration)
+	var pulse: Dictionary = grid.trigger_climate_pulse(center_x, center_z, 15.0, "deluge", 5.0)
+	if pulse.is_empty() or grid.get_active_pulse_count() != 1:
+		return "Climate pulse failed to register in EnvironmentalGrid"
+
+	# Step 2.5s: pulse still active
+	grid.step_simulation(2.5, 0.5)
+	if grid.get_active_pulse_count() != 1:
+		return "Climate pulse expired prematurely"
+
+	var mid_cell: Dictionary = grid.sample_at(center_x, center_z)
+	if mid_cell["moisture"] <= before_moist:
+		return "Deluge pulse did not increase moisture during active period"
+
+	# Step 3.0s (total 5.5s > 5.0s duration): pulse should cleanly expire
+	grid.step_simulation(3.0, 0.5)
+	if grid.get_active_pulse_count() != 0:
+		return "Climate pulse failed to clean up after duration expired"
+
+	return ""
+
+func test_experiment_history_tracking_and_comparison() -> String:
+	var clock: WorldClock = WorldClock.new(10.0)
+	var exp_hist: ExperimentHistory = ExperimentHistory.new(clock, 12345)
+
+	# 1. Baseline initialization
+	var base_snap: Dictionary = {
+		"plant_count": 50,
+		"total_biomass": 200.0,
+		"herbivore_count": 12,
+		"predator_count": 2,
+		"avg_speed": 1.0,
+		"diversity_index": 0.55
+	}
+	exp_hist.init_baseline(12345, base_snap, 0.0)
+	var stored_base: Dictionary = exp_hist.get_initial_baseline()
+	if stored_base.get("plant_count", 0) != 50 or stored_base.get("seed", 0) != 12345:
+		return "Baseline initialization failed"
+
+	# 2. Record experiment with evaluation delay (10.0s)
+	clock.simulation_time = 15.0
+	var rec: Dictionary = exp_hist.record_experiment("Heatwave Experiment", "heatwave", Vector3(5, 0, 5), 10.0, base_snap, 15.0, 10.0)
+	if exp_hist.get_experiments().size() != 1:
+		return "Failed to record experiment"
+	if rec.get("is_evaluated", true):
+		return "Experiment marked evaluated prematurely"
+
+	# Step before eval time
+	clock.simulation_time = 20.0
+	exp_hist.step(clock.simulation_time, base_snap)
+	if rec.get("is_evaluated", false):
+		return "Experiment evaluated before target time"
+
+	# Step at/past eval time
+	clock.simulation_time = 26.0
+	var post_snap: Dictionary = {
+		"plant_count": 42,
+		"total_biomass": 165.0,
+		"herbivore_count": 10,
+		"predator_count": 2,
+		"avg_speed": 1.02,
+		"diversity_index": 0.58
+	}
+	exp_hist.step(clock.simulation_time, post_snap)
+	if not rec.get("is_evaluated", false):
+		return "Experiment failed to evaluate after delay"
+	if not ("Flora" in rec.get("summary", "")):
+		return "Comparison summary missing flora metrics"
+
+	# 3. Serialization roundtrip
+	var saved: Dictionary = exp_hist.serialize()
+	var restored: ExperimentHistory = ExperimentHistory.new(clock)
+	restored.deserialize(saved)
+
+	if restored.master_seed != 12345:
+		return "Restored master seed mismatch"
+	if restored.get_experiments().size() != 1:
+		return "Restored experiment count mismatch"
+
+	return ""
+
+func test_simulation_clock_controls_and_event_processing() -> String:
+	var clock: WorldClock = WorldClock.new(10.0)
+	var bus: WorldEventBus = WorldEventBus.new()
+	var event_received: Array[bool] = [false]
+
+	bus.subscribe("test_event", func(_p): event_received[0] = true)
+
+	# 1. Normal ticking
+	var ticks: int = clock.advance(0.3)
+	if ticks != 3:
+		return "Clock did not advance 3 ticks in 0.3s at 10Hz, got: %d" % ticks
+
+	# 2. Pause
+	clock.pause()
+	var paused_ticks: int = clock.advance(0.5)
+	if paused_ticks != 0:
+		return "Clock advanced ticks while paused"
+	if not clock.is_paused:
+		return "Clock is_paused is false after pause()"
+
+	# Verify event bus can still process and deliver events during simulation pause
+	bus.publish("test_event", {"status": "ok"})
+	if not event_received[0]:
+		return "WorldEventBus failed to deliver event during simulation pause"
+
+	# 3. Resume and Time Scale
+	clock.resume()
+	clock.set_time_scale(2.0)
+	var fast_ticks: int = clock.advance(0.2)
+	# 0.2s * 2.0x time_scale = 0.4s effective -> 4 ticks
+	if fast_ticks != 4:
+		return "Clock did not scale ticks under 2.0x time scale, got: %d" % fast_ticks
 
 	return ""

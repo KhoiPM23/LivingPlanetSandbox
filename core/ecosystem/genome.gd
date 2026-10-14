@@ -221,6 +221,82 @@ func create_mutated_offspring(parent_entity_id: int, rng: RandomNumberGenerator,
 
 	return child
 
+## Applies in-place controlled mutation to a living entity's traits.
+## Enforces strict physiological bounds and updates visual tint and generation counter.
+## Returns a dictionary of modified trait names and their new values.
+func mutate_in_place(rng: RandomNumberGenerator = null, mutation_rate: float = 0.60, max_mutation_pct: float = 0.08) -> Dictionary:
+	var r: RandomNumberGenerator = rng if rng != null else RandomNumberGenerator.new()
+	var changes: Dictionary = {}
+	generation += 1
+
+	if genome_type == GenomeType.FAUNA:
+		if r.randf() < mutation_rate:
+			var old_sz: float = size
+			var delta_size: float = size * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			size = clampf(size + delta_size, 0.60, 1.50)
+			changes["size"] = {"old": old_sz, "new": size}
+
+		if r.randf() < mutation_rate:
+			var old_spd: float = speed
+			var delta_speed: float = speed * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			speed = clampf(speed + delta_speed, 0.60, 1.50)
+			changes["speed"] = {"old": old_spd, "new": speed}
+
+		if r.randf() < mutation_rate:
+			var old_sn: float = sense_range
+			var delta_sense: float = sense_range * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			sense_range = clampf(sense_range + delta_sense, 14.0, 48.0)
+			changes["sense_range"] = {"old": old_sn, "new": sense_range}
+
+		if r.randf() < mutation_rate:
+			var old_eff: float = energy_efficiency
+			var delta_eff: float = energy_efficiency * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			energy_efficiency = clampf(energy_efficiency + delta_eff, 0.65, 1.45)
+			changes["energy_efficiency"] = {"old": old_eff, "new": energy_efficiency}
+
+		if species == "mountain_stalker":
+			if r.randf() < mutation_rate:
+				var old_pr: float = predation
+				var delta_pred: float = predation * r.randf_range(-max_mutation_pct, max_mutation_pct)
+				predation = clampf(predation + delta_pred, 0.60, 1.50)
+				changes["predation"] = {"old": old_pr, "new": predation}
+		else:
+			if r.randf() < mutation_rate:
+				var old_fg: float = foraging
+				var delta_forage: float = foraging * r.randf_range(-max_mutation_pct, max_mutation_pct)
+				foraging = clampf(foraging + delta_forage, 0.60, 1.50)
+				changes["foraging"] = {"old": old_fg, "new": foraging}
+
+		var h: float = coat_tint.h + r.randf_range(-0.04, 0.04)
+		var s: float = clampf(coat_tint.s + r.randf_range(-0.06, 0.06), 0.2, 0.8)
+		var v: float = clampf(coat_tint.v + r.randf_range(-0.06, 0.06), 0.15, 0.9)
+		coat_tint = Color.from_hsv(wrapf(h, 0.0, 1.0), s, v)
+	else: # FLORA
+		if r.randf() < mutation_rate:
+			var old_drg: float = drought_tolerance
+			var delta_drg: float = drought_tolerance * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			drought_tolerance = clampf(drought_tolerance + delta_drg, 0.08, 0.45)
+			changes["drought_tolerance"] = {"old": old_drg, "new": drought_tolerance}
+
+		if r.randf() < mutation_rate:
+			var old_gw: float = growth_rate_mult
+			var delta_growth: float = growth_rate_mult * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			growth_rate_mult = clampf(growth_rate_mult + delta_growth, 0.55, 1.60)
+			changes["growth_rate_mult"] = {"old": old_gw, "new": growth_rate_mult}
+
+		if r.randf() < mutation_rate:
+			var old_spr: float = seed_spread_radius
+			var delta_spr: float = seed_spread_radius * r.randf_range(-max_mutation_pct, max_mutation_pct)
+			seed_spread_radius = clampf(seed_spread_radius + delta_spr, 3.5, 16.0)
+			changes["seed_spread_radius"] = {"old": old_spr, "new": seed_spread_radius}
+
+		var h: float = foliage_tint.h + r.randf_range(-0.04, 0.04)
+		var s: float = clampf(foliage_tint.s + r.randf_range(-0.06, 0.06), 0.25, 0.85)
+		var v: float = clampf(foliage_tint.v + r.randf_range(-0.06, 0.06), 0.3, 0.9)
+		foliage_tint = Color.from_hsv(wrapf(h, 0.0, 1.0), s, v)
+
+	return changes
+
 ## Two-parent sexual recombination (Mendelian allele inheritance + bounded ±5% mutations).
 static func create_recombined_offspring(
 	parent_a: EcosystemGenome,
