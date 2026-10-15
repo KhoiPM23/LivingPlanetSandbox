@@ -16,7 +16,7 @@ var _main_scene: Node = null
 func _init() -> void:
 	print("=======================================================")
 	print("   LIVING PLANET SANDBOX — RUNTIME PERFORMANCE BENCHMARK")
-	print("=======================================================")
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var packed: PackedScene = load("res://scenes/main.tscn")
 	if not packed:
 		printerr("[Benchmark] Failed to load res://scenes/main.tscn")
@@ -38,10 +38,6 @@ func _on_process_frame() -> void:
 		_draw_calls.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 		_primitives.append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		
-	# Attempt screenshot capture at frame 50
-	if _frame_count == 50:
-		_attempt_screenshot()
-		
 	if _frame_count >= _max_frames:
 		_finish_benchmark()
 
@@ -59,7 +55,6 @@ func _attempt_screenshot() -> void:
 				img.save_png(ProjectSettings.globalize_path("res://screenshot_first_playable.png"))
 				if err == OK:
 					print("[Benchmark] Runtime screenshot captured to: %s (Size: %dx%d)" % [global_path, img.get_width(), img.get_height()])
-
 				else:
 					print("[Benchmark] Viewport image capture returned error code: %d" % err)
 			else:
@@ -108,16 +103,25 @@ func _finish_benchmark() -> void:
 			m.plant_count, m.total_biomass, m.herbivore_count, m.predator_count, m.births_total, m.deaths_total
 		]
 	
-	print("\n--- BENCHMARK RESULTS ---")
-	print("Renderer:            %s" % renderer_name)
-	print("Sampled Frames:      %d" % count)
-	print("Avg FPS:             %.1f" % avg_fps)
-	print("Min / Max FPS:       %.1f / %.1f" % [min_fps, max_fps])
-	print("Avg Frame Time:      %.2f ms" % avg_ms)
-	print("Max Draw Calls:      %.0f" % max_dc)
-	print("Max Primitives:      %.0f" % max_prim)
-	print("Static Memory:       %.2f MB" % mem_static)
-	print("Entities Tracked:    %d" % tracked_ent)
-	print("Ecosystem State:     %s" % eco_summary)
-	print("-------------------------\n")
+	var summary_text: String = ""
+	summary_text += "\n--- BENCHMARK RESULTS ---\n"
+	summary_text += "Renderer:            %s\n" % renderer_name
+	summary_text += "Sampled Frames:      %d\n" % count
+	summary_text += "Avg FPS:             %.1f\n" % avg_fps
+	summary_text += "Min / Max FPS:       %.1f / %.1f\n" % [min_fps, max_fps]
+	summary_text += "Avg Frame Time:      %.2f ms\n" % avg_ms
+	summary_text += "Max Draw Calls:      %.0f\n" % max_dc
+	summary_text += "Max Primitives:      %.0f\n" % max_prim
+	summary_text += "Static Memory:       %.2f MB\n" % mem_static
+	summary_text += "Entities Tracked:    %d\n" % tracked_ent
+	summary_text += "Ecosystem State:     %s\n" % eco_summary
+	summary_text += "-------------------------\n"
+	print(summary_text)
+
+	var save_path: String = ProjectSettings.globalize_path("res://reports/benchmark_summary.txt")
+	var f = FileAccess.open(save_path, FileAccess.WRITE)
+	if f:
+		f.store_string(summary_text)
+		f.close()
+	_attempt_screenshot()
 	quit(0)

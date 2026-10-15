@@ -20,6 +20,8 @@ static var _wolf_scene: PackedScene = null
 
 static var _plant_shrub_mesh: Mesh = null
 static var _plant_shrub_mat: Material = null
+static var _plant_shrub_stem_mat: StandardMaterial3D = null
+static var _plant_shrub_leaf_mat: ShaderMaterial = null
 static var _plant_grass_mesh: Mesh = null
 static var _plant_grass_mat: Material = null
 
@@ -60,18 +62,55 @@ static func _init_animal_templates() -> void:
 	_deer_scene = _load_gltf_packed("res://presentation/assets/models/Deer.gltf")
 	_wolf_scene = _load_gltf_packed("res://presentation/assets/models/Wolf.gltf")
 
-	# Load plant models from forest.glb and nature.glb
-	var f_gltf: GLTFDocument = GLTFDocument.new()
-	var f_state: GLTFState = GLTFState.new()
-	if f_gltf.append_from_file("res://presentation/assets/models/forest.glb", f_state) == OK:
-		var f_root: Node = f_gltf.generate_scene(f_state)
-		if f_root:
-			var b_node: MeshInstance3D = f_root.find_child("Bush_1_E_Color1", true, false) as MeshInstance3D
-			if b_node and b_node.mesh:
-				_plant_shrub_mesh = b_node.mesh
-				if b_node.mesh.get_surface_count() > 0:
-					_plant_shrub_mat = b_node.mesh.surface_get_material(0)
+	# Load hero bush model
+	var b_scn = _load_gltf_packed("res://presentation/assets/foliage/bush2.gltf")
+	if b_scn:
+		var b_root: Node = b_scn.instantiate()
+		if b_root and b_root.get_child_count() > 0:
+			var mi: MeshInstance3D = b_root.get_child(0) as MeshInstance3D
+			if mi and mi.mesh:
+				_plant_shrub_mesh = mi.mesh
+		b_root.free()
 
+	if _plant_shrub_stem_mat == null:
+		_plant_shrub_stem_mat = StandardMaterial3D.new()
+		var alb = load("res://presentation/assets/foliage/Lilac_bark_color.jpg")
+		if alb is Texture2D:
+			_plant_shrub_stem_mat.albedo_texture = alb
+		var nrm = load("res://presentation/assets/foliage/Lilac_bark_normal.jpg")
+		if nrm is Texture2D:
+			_plant_shrub_stem_mat.normal_enabled = true
+			_plant_shrub_stem_mat.normal_texture = nrm
+		_plant_shrub_stem_mat.roughness = 0.88
+
+	if _plant_shrub_leaf_mat == null:
+		_plant_shrub_leaf_mat = ShaderMaterial.new()
+		_plant_shrub_leaf_mat.shader = preload("res://presentation/shaders/foliage_wind.gdshader")
+		_plant_shrub_leaf_mat.set_shader_parameter("use_texture", true)
+		_plant_shrub_leaf_mat.set_shader_parameter("use_alpha_scissor", true)
+		_plant_shrub_leaf_mat.set_shader_parameter("alpha_scissor_threshold", 0.45)
+		var c_alb = load("res://presentation/assets/foliage/lilac_cards_color.png")
+		if c_alb is Texture2D:
+			_plant_shrub_leaf_mat.set_shader_parameter("albedo_texture", c_alb)
+		var c_nrm = load("res://presentation/assets/foliage/lilac_cards_normal.jpg")
+		if c_nrm is Texture2D:
+			_plant_shrub_leaf_mat.set_shader_parameter("use_normal_texture", true)
+			_plant_shrub_leaf_mat.set_shader_parameter("normal_texture", c_nrm)
+		var c_rgh = load("res://presentation/assets/foliage/lilac_cards_roughness.jpg")
+		if c_rgh is Texture2D:
+			_plant_shrub_leaf_mat.set_shader_parameter("use_roughness_texture", true)
+			_plant_shrub_leaf_mat.set_shader_parameter("roughness_texture", c_rgh)
+		_plant_shrub_leaf_mat.set_shader_parameter("roughness", 0.82)
+		_plant_shrub_leaf_mat.set_shader_parameter("wind_speed", 1.3)
+		_plant_shrub_leaf_mat.set_shader_parameter("wind_strength", 0.20)
+		_plant_shrub_leaf_mat.set_shader_parameter("backlight_strength", 0.15)
+		_plant_shrub_mat = _plant_shrub_leaf_mat
+
+	# Load plant models from forest.glb for grass
+	var f_scn = _load_gltf_packed("res://presentation/assets/models/forest.glb")
+	if f_scn:
+		var f_root: Node = f_scn.instantiate()
+		if f_root:
 			var g_node: MeshInstance3D = f_root.find_child("Grass_2_D_Color1", true, false) as MeshInstance3D
 			if g_node and g_node.mesh:
 				_plant_grass_mesh = g_node.mesh
@@ -80,24 +119,11 @@ static func _init_animal_templates() -> void:
 			f_root.free()
 
 static func _load_gltf_packed(path: String) -> PackedScene:
-	var gltf: GLTFDocument = GLTFDocument.new()
-	var state: GLTFState = GLTFState.new()
-	var err: Error = gltf.append_from_file(path, state)
-	if err != OK:
-		return null
-	var root: Node = gltf.generate_scene(state)
-	if not root:
-		return null
-	_set_owner_recursive(root, root)
-	var packed: PackedScene = PackedScene.new()
-	var pack_err: Error = packed.pack(root)
-	root.free()
-	return packed if pack_err == OK else null
-
-static func _set_owner_recursive(node: Node, owner: Node) -> void:
-	for c in node.get_children():
-		c.owner = owner
-		_set_owner_recursive(c, owner)
+	if ResourceLoader.exists(path):
+		var res = load(path)
+		if res is PackedScene:
+			return res
+	return null
 
 func _init_shared_resources() -> void:
 	# Fallback herbivore resources
@@ -195,7 +221,10 @@ func _process(delta: float) -> void:
 	_anim_time += delta
 	_update_herbivores(delta)
 	_update_predators(delta)
-	_update_plants()
+	# NOTE: Plant visual nodes are intentionally NOT rendered here.
+	# VegetationScatter already places flora visuals deterministically across the terrain.
+	# Rendering ecosystem plant nodes separately would cause visual overlap/doubling.
+	# Flora simulation state is tracked internally but has no separate 3D representation.
 	_update_selection_marker(delta)
 
 func _update_selection_marker(delta: float) -> void:
@@ -228,6 +257,9 @@ func _update_herbivores(delta: float) -> void:
 	var active_herbivores: Array = _coordinator.fauna_sim.get_all_herbivores()
 	var active_ids: Dictionary = {}
 
+	var cam: Camera3D = get_viewport().get_camera_3d() if get_viewport() else null
+	var cam_pos: Vector3 = cam.global_position if (cam and cam.is_inside_tree()) else Vector3(0.0, 15.0, 25.0)
+
 	for h in active_herbivores:
 		active_ids[h.id] = true
 		var node: Node3D = _herbivore_nodes.get(h.id, null)
@@ -238,12 +270,21 @@ func _update_herbivores(delta: float) -> void:
 			node.position = h.position
 
 		var target_pos: Vector3 = h.position
-		var is_moving: bool = h.velocity.length_squared() > 0.05
-		var anim: AnimationPlayer = node.get_meta("anim_player", null) as AnimationPlayer
+		var current_speed: float = h.velocity.length()
+		var is_moving: bool = current_speed > 0.08
+		var anim: AnimationPlayer = (node.get_meta("anim_player") as AnimationPlayer) if node.has_meta("anim_player") else null
+		var dist_to_cam: float = node.position.distance_to(cam_pos)
+		var is_distant: bool = dist_to_cam > 55.0
 
-		# Authentic animation state machine mapped to biological simulation state
+		# Authentic animation state machine with exact stride-matched speed scaling
 		if anim:
 			match h.state:
+				FaunaSimulation.HerbivoreState.DRINKING:
+					anim.speed_scale = 1.0
+					_play_anim(anim, "Idle_Headlow", 0.30)
+				FaunaSimulation.HerbivoreState.ALERT:
+					anim.speed_scale = 1.0
+					_play_anim(anim, "Idle_2", 0.18)
 				FaunaSimulation.HerbivoreState.RESTING:
 					anim.speed_scale = 1.0
 					_play_anim(anim, "Idle_Headlow", 0.35)
@@ -251,32 +292,83 @@ func _update_herbivores(delta: float) -> void:
 					anim.speed_scale = 1.0
 					_play_anim(anim, "Eating", 0.20)
 				FaunaSimulation.HerbivoreState.FLEEING:
-					var speed_flee: float = h.velocity.length()
-					anim.speed_scale = clampf(speed_flee / 4.2, 0.9, 1.6)
+					# Stride matching for Gallop: ~3.75 m/s base stride
+					anim.speed_scale = clampf(current_speed / 3.75, 0.75, 1.65)
 					_play_anim(anim, "Gallop", 0.15)
 				FaunaSimulation.HerbivoreState.STARVING:
-					var speed_starve: float = h.velocity.length()
-					anim.speed_scale = clampf(speed_starve / 2.2, 0.6, 1.2) if is_moving else 1.0
-					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
+					if is_moving:
+						anim.speed_scale = clampf(current_speed / 1.55, 0.55, 1.15)
+						_play_anim(anim, "Walk", 0.25)
+					else:
+						anim.speed_scale = 1.0
+						_play_anim(anim, "Idle_HitReact1", 0.30)
 				_: # WANDERING, FORAGING
-					var speed_walk: float = h.velocity.length()
-					anim.speed_scale = clampf(speed_walk / 2.5, 0.7, 1.4) if is_moving else 1.0
-					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
+					if is_moving:
+						# Stride matching for Walk: ~1.55 m/s base stride
+						anim.speed_scale = clampf(current_speed / 1.55, 0.65, 1.45)
+						_play_anim(anim, "Walk", 0.22)
+					else:
+						anim.speed_scale = 1.0
+						# Dynamic idle posture shifts (Idle -> Idle_2 head look -> Idle_Headlow ground sniff)
+						var idle_timer: float = float(node.get_meta("idle_timer", 0.0)) + delta
+						var idle_dur: float = float(node.get_meta("idle_dur", 6.0))
+						var cur_idle: String = String(node.get_meta("idle_clip", "Idle"))
+						if idle_timer >= idle_dur:
+							idle_timer = 0.0
+							var r: float = randf()
+							if r < 0.45:
+								cur_idle = "Idle"
+							elif r < 0.80:
+								cur_idle = "Idle_2"
+							else:
+								cur_idle = "Idle_Headlow"
+							node.set_meta("idle_dur", randf_range(5.0, 9.5))
+							node.set_meta("idle_clip", cur_idle)
+						node.set_meta("idle_timer", idle_timer)
+						_play_anim(anim, cur_idle, 0.32)
 		else:
 			# Fallback bobbing if using primitive models
 			var head_node: Node3D = node.get_node_or_null("Head") as Node3D
 			if head_node:
-				if h.state == FaunaSimulation.HerbivoreState.EATING:
+				if h.state == FaunaSimulation.HerbivoreState.EATING or h.state == FaunaSimulation.HerbivoreState.DRINKING:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(32.0), clampf(delta * 10.0, 0.0, 1.0))
 				else:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, clampf(delta * 8.0, 0.0, 1.0))
 
 		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
 
-		# Smooth natural rotation toward travel direction (GLTF forward is -Z)
+		# Smooth natural rotation toward travel direction (GLTF forward is -Z) with rate-limited turning
 		if is_moving:
 			var target_rot_y: float = atan2(-h.velocity.x, -h.velocity.z) if anim != null else atan2(h.velocity.x, h.velocity.z)
-			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
+			var max_angular_speed: float = 6.2 if h.state == FaunaSimulation.HerbivoreState.FLEEING else 4.2
+			var diff: float = angle_difference(node.rotation.y, target_rot_y)
+			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * max_angular_speed, delta * max_angular_speed), -PI, PI)
+		elif h.state == FaunaSimulation.HerbivoreState.ALERT:
+			# When alert, orient body towards vigilance heading
+			var target_rot_y: float = atan2(-cos(h.heading), -sin(h.heading)) if anim != null else h.heading
+			var diff: float = angle_difference(node.rotation.y, target_rot_y)
+			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * 3.6, delta * 3.6), -PI, PI)
+
+		# Dual-Axis terrain slope conformance: Pitch (forward/back) and Roll (left/right sidehill)
+		if _coordinator and _coordinator.terrain_height_func.is_valid():
+			var fwd_x: float = -sin(node.rotation.y)
+			var fwd_z: float = -cos(node.rotation.y)
+			var h_fwd: float = _coordinator.terrain_height_func.call(node.position.x + fwd_x * 0.7, node.position.z + fwd_z * 0.7)
+			var h_back: float = _coordinator.terrain_height_func.call(node.position.x - fwd_x * 0.7, node.position.z - fwd_z * 0.7)
+			if is_finite(h_fwd) and is_finite(h_back):
+				var target_pitch: float = clampf(atan2(h_fwd - h_back, 1.4), -0.65, 0.65)
+				node.rotation.x = wrapf(lerp_angle(node.rotation.x, target_pitch, clampf(delta * 7.0, 0.0, 1.0)), -PI, PI)
+
+			if not is_distant:
+				var right_x: float = cos(node.rotation.y)
+				var right_z: float = -sin(node.rotation.y)
+				var h_right: float = _coordinator.terrain_height_func.call(node.position.x + right_x * 0.35, node.position.z + right_z * 0.35)
+				var h_left: float = _coordinator.terrain_height_func.call(node.position.x - right_x * 0.35, node.position.z - right_z * 0.35)
+				if is_finite(h_right) and is_finite(h_left):
+					var target_roll: float = clampf(atan2(h_right - h_left, 0.7), -0.55, 0.55)
+					node.rotation.z = wrapf(lerp_angle(node.rotation.z, target_roll, clampf(delta * 7.0, 0.0, 1.0)), -PI, PI)
+			else:
+				node.rotation.z = wrapf(lerp_angle(node.rotation.z, 0.0, clampf(delta * 4.0, 0.0, 1.0)), -PI, PI)
 
 		# Phenotypic trait scale
 		var base_scale: float = 0.58 if (h.id % 2 == 0) else 0.52
@@ -296,6 +388,9 @@ func _update_predators(delta: float) -> void:
 	var active_predators: Array = _coordinator.fauna_sim.get_all_predators()
 	var active_ids: Dictionary = {}
 
+	var cam: Camera3D = get_viewport().get_camera_3d() if get_viewport() else null
+	var cam_pos: Vector3 = cam.global_position if (cam and cam.is_inside_tree()) else Vector3(0.0, 15.0, 25.0)
+
 	for p in active_predators:
 		active_ids[p.id] = true
 		var node: Node3D = _predator_nodes.get(p.id, null)
@@ -306,12 +401,21 @@ func _update_predators(delta: float) -> void:
 			node.position = p.position
 
 		var target_pos: Vector3 = p.position
-		var is_moving: bool = p.velocity.length_squared() > 0.05
-		var anim: AnimationPlayer = node.get_meta("anim_player", null) as AnimationPlayer
+		var current_speed: float = p.velocity.length()
+		var is_moving: bool = current_speed > 0.08
+		var anim: AnimationPlayer = (node.get_meta("anim_player") as AnimationPlayer) if node.has_meta("anim_player") else null
+		var dist_to_cam: float = node.position.distance_to(cam_pos)
+		var is_distant: bool = dist_to_cam > 55.0
 
-		# Authentic predator animation state machine
+		# Authentic predator animation state machine with stride-matched speed scaling
 		if anim:
 			match p.state:
+				FaunaSimulation.PredatorState.DRINKING:
+					anim.speed_scale = 1.0
+					_play_anim(anim, "Idle_2_HeadLow", 0.30)
+				FaunaSimulation.PredatorState.ALERT:
+					anim.speed_scale = 1.0
+					_play_anim(anim, "Idle_2", 0.18)
 				FaunaSimulation.PredatorState.RESTING:
 					anim.speed_scale = 1.0
 					_play_anim(anim, "Idle_2_HeadLow", 0.35)
@@ -319,21 +423,44 @@ func _update_predators(delta: float) -> void:
 					anim.speed_scale = 1.0
 					_play_anim(anim, "Eating", 0.20)
 				FaunaSimulation.PredatorState.HUNTING:
-					var speed_hunt: float = p.velocity.length()
-					anim.speed_scale = clampf(speed_hunt / 4.8, 0.9, 1.6)
+					# Stride matching for predator Gallop: ~4.00 m/s base stride
+					anim.speed_scale = clampf(current_speed / 4.00, 0.75, 1.65)
 					_play_anim(anim, "Gallop", 0.15)
 				FaunaSimulation.PredatorState.STARVING:
-					var speed_starve: float = p.velocity.length()
-					anim.speed_scale = clampf(speed_starve / 2.5, 0.6, 1.2) if is_moving else 1.0
-					_play_anim(anim, "Walk" if is_moving else "Idle_HitReact1", 0.3)
+					if is_moving:
+						anim.speed_scale = clampf(current_speed / 1.65, 0.55, 1.20)
+						_play_anim(anim, "Walk", 0.25)
+					else:
+						anim.speed_scale = 1.0
+						_play_anim(anim, "Idle_HitReact1", 0.30)
 				_: # WANDERING
-					var speed_walk: float = p.velocity.length()
-					anim.speed_scale = clampf(speed_walk / 2.8, 0.7, 1.4) if is_moving else 1.0
-					_play_anim(anim, "Walk" if is_moving else "Idle", 0.25)
+					if is_moving:
+						# Stride matching for predator Walk: ~1.65 m/s base stride
+						anim.speed_scale = clampf(current_speed / 1.65, 0.65, 1.45)
+						_play_anim(anim, "Walk", 0.22)
+					else:
+						anim.speed_scale = 1.0
+						# Dynamic predator posture shifts (Idle alert scan -> Idle_2 look -> Idle_2_HeadLow scent sniff)
+						var idle_timer: float = float(node.get_meta("idle_timer", 0.0)) + delta
+						var idle_dur: float = float(node.get_meta("idle_dur", 5.5))
+						var cur_idle: String = String(node.get_meta("idle_clip", "Idle"))
+						if idle_timer >= idle_dur:
+							idle_timer = 0.0
+							var r: float = randf()
+							if r < 0.40:
+								cur_idle = "Idle"
+							elif r < 0.75:
+								cur_idle = "Idle_2"
+							else:
+								cur_idle = "Idle_2_HeadLow"
+							node.set_meta("idle_dur", randf_range(4.5, 8.5))
+							node.set_meta("idle_clip", cur_idle)
+						node.set_meta("idle_timer", idle_timer)
+						_play_anim(anim, cur_idle, 0.30)
 		else:
 			var head_node: Node3D = node.get_node_or_null("Head") as Node3D
 			if head_node:
-				if p.state == FaunaSimulation.PredatorState.EATING:
+				if p.state == FaunaSimulation.PredatorState.EATING or p.state == FaunaSimulation.PredatorState.DRINKING:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-60.0), clampf(delta * 10.0, 0.0, 1.0))
 				else:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-90.0), clampf(delta * 8.0, 0.0, 1.0))
@@ -342,7 +469,34 @@ func _update_predators(delta: float) -> void:
 
 		if is_moving:
 			var target_rot_y: float = atan2(-p.velocity.x, -p.velocity.z) if anim != null else atan2(p.velocity.x, p.velocity.z)
-			node.rotation.y = lerp_angle(node.rotation.y, target_rot_y, clampf(delta * 9.0, 0.0, 1.0))
+			var max_pred_angular_speed: float = 6.8 if p.state == FaunaSimulation.PredatorState.HUNTING else 4.5
+			var diff: float = angle_difference(node.rotation.y, target_rot_y)
+			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * max_pred_angular_speed, delta * max_pred_angular_speed), -PI, PI)
+		elif p.state == FaunaSimulation.PredatorState.ALERT:
+			var target_rot_y: float = atan2(-cos(p.heading), -sin(p.heading)) if anim != null else p.heading
+			var diff: float = angle_difference(node.rotation.y, target_rot_y)
+			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * 3.8, delta * 3.8), -PI, PI)
+
+		# Dual-Axis predator slope pitch and roll conformance
+		if _coordinator and _coordinator.terrain_height_func.is_valid():
+			var fwd_x: float = -sin(node.rotation.y)
+			var fwd_z: float = -cos(node.rotation.y)
+			var h_fwd: float = _coordinator.terrain_height_func.call(node.position.x + fwd_x * 0.6, node.position.z + fwd_z * 0.6)
+			var h_back: float = _coordinator.terrain_height_func.call(node.position.x - fwd_x * 0.6, node.position.z - fwd_z * 0.6)
+			if is_finite(h_fwd) and is_finite(h_back):
+				var target_pitch: float = clampf(atan2(h_fwd - h_back, 1.2), -0.65, 0.65)
+				node.rotation.x = wrapf(lerp_angle(node.rotation.x, target_pitch, clampf(delta * 7.0, 0.0, 1.0)), -PI, PI)
+
+			if not is_distant:
+				var right_x: float = cos(node.rotation.y)
+				var right_z: float = -sin(node.rotation.y)
+				var h_right: float = _coordinator.terrain_height_func.call(node.position.x + right_x * 0.30, node.position.z + right_z * 0.30)
+				var h_left: float = _coordinator.terrain_height_func.call(node.position.x - right_x * 0.30, node.position.z - right_z * 0.30)
+				if is_finite(h_right) and is_finite(h_left):
+					var target_roll: float = clampf(atan2(h_right - h_left, 0.6), -0.55, 0.55)
+					node.rotation.z = wrapf(lerp_angle(node.rotation.z, target_roll, clampf(delta * 7.0, 0.0, 1.0)), -PI, PI)
+			else:
+				node.rotation.z = wrapf(lerp_angle(node.rotation.z, 0.0, clampf(delta * 4.0, 0.0, 1.0)), -PI, PI)
 
 		var base_scale: float = 0.46
 		var trait_mult: float = p.genome.size_scale if p.genome else 1.0
@@ -356,27 +510,17 @@ func _update_predators(delta: float) -> void:
 			_predator_nodes[id].queue_free()
 			_predator_nodes.erase(id)
 
+## Plant visual rendering is suppressed: VegetationScatter handles all flora visuals.
+## This function is kept for API compatibility but does NOT instantiate any nodes.
+## Flora simulation state tracking continues internally via EcosystemCoordinator.
 func _update_plants() -> void:
-	var active_plants: Array = _coordinator.flora_sim.get_all_plants()
-	var active_ids: Dictionary = {}
+	pass
 
-	for pl in active_plants:
-		active_ids[pl.id] = true
-		var node: Node3D = _plant_nodes.get(pl.id, null)
-		if node == null:
-			node = _create_plant_mesh(pl.species, pl.genome)
-			add_child(node)
-			_plant_nodes[pl.id] = node
-			node.position = pl.position
-
-		var target_scale: float = 0.4 + (pl.biomass / pl.max_biomass) * 0.8
-		if absf(node.scale.x - target_scale) > 0.02:
-			node.scale = Vector3(target_scale, target_scale, target_scale)
-
-	for id: int in _plant_nodes.keys():
-		if not active_ids.has(id):
-			_plant_nodes[id].queue_free()
-			_plant_nodes.erase(id)
+static func _find_mesh_instances(node: Node, out_arr: Array) -> void:
+	if node is MeshInstance3D:
+		out_arr.append(node)
+	for c in node.get_children():
+		_find_mesh_instances(c, out_arr)
 
 ## High-fidelity rigged herbivore (Stag / Deer) with Skeletal Mesh & Locomotion Animations
 func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -> Node3D:
@@ -400,17 +544,22 @@ func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) 
 			root.set_meta("anim_player", anim)
 			anim.play("Idle")
 
-		# Apply phenotype coat tint if inherited
-		if genome and genome.coat_tint != Color(0.72, 0.55, 0.38):
-			var mesh_node: MeshInstance3D = model_inst.find_child("Stag", true, false) as MeshInstance3D
-			if mesh_node == null:
-				mesh_node = model_inst.find_child("Deer", true, false) as MeshInstance3D
-			if mesh_node and mesh_node.mesh and mesh_node.mesh.get_surface_count() > 0:
-				var m = mesh_node.mesh.surface_get_material(0)
-				if m is StandardMaterial3D:
-					var custom_mat: StandardMaterial3D = m.duplicate()
-					custom_mat.albedo_color = genome.coat_tint
-					mesh_node.material_override = custom_mat
+		# Apply natural fur material, soft specular fur sheen, and phenotype coat tint
+		var meshes: Array = []
+		_find_mesh_instances(model_inst, meshes)
+		for mesh_node in meshes:
+			if mesh_node is MeshInstance3D and mesh_node.mesh:
+				mesh_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				for s in range(mesh_node.mesh.get_surface_count()):
+					var m = mesh_node.mesh.surface_get_material(s)
+					if m is StandardMaterial3D:
+						var custom_mat: StandardMaterial3D = m.duplicate()
+						custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+						custom_mat.roughness = 0.82
+						custom_mat.metallic_specular = 0.22
+						if genome and s == 0 and genome.coat_tint != Color(0.72, 0.55, 0.38):
+							custom_mat.albedo_color = genome.coat_tint
+						mesh_node.set_surface_override_material(s, custom_mat)
 
 		root.add_child(model_inst)
 		var base_scale: float = 0.58 if (entity_id % 2 == 0) else 0.52
@@ -472,14 +621,21 @@ func _create_predator_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -
 			root.set_meta("anim_player", anim)
 			anim.play("Idle")
 
-		if genome and genome.coat_tint != Color(0.15, 0.15, 0.16):
-			var mesh_node: MeshInstance3D = model_inst.find_child("Wolf", true, false) as MeshInstance3D
-			if mesh_node and mesh_node.mesh and mesh_node.mesh.get_surface_count() > 0:
-				var m = mesh_node.mesh.surface_get_material(0)
-				if m is StandardMaterial3D:
-					var custom_mat: StandardMaterial3D = m.duplicate()
-					custom_mat.albedo_color = genome.coat_tint
-					mesh_node.material_override = custom_mat
+		var meshes: Array = []
+		_find_mesh_instances(model_inst, meshes)
+		for mesh_node in meshes:
+			if mesh_node is MeshInstance3D and mesh_node.mesh:
+				mesh_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				for s in range(mesh_node.mesh.get_surface_count()):
+					var m = mesh_node.mesh.surface_get_material(s)
+					if m is StandardMaterial3D:
+						var custom_mat: StandardMaterial3D = m.duplicate()
+						custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+						custom_mat.roughness = 0.80
+						custom_mat.metallic_specular = 0.22
+						if genome and s == 0 and genome.coat_tint != Color(0.15, 0.15, 0.16):
+							custom_mat.albedo_color = genome.coat_tint
+						mesh_node.set_surface_override_material(s, custom_mat)
 
 		root.add_child(model_inst)
 		var base_scale: float = 0.46
@@ -532,7 +688,10 @@ func _create_plant_mesh(species: String, genome: EcosystemGenome = null) -> Node
 	if species == "shrub_bush":
 		if _plant_shrub_mesh:
 			inst.mesh = _plant_shrub_mesh
-			if _plant_shrub_mat:
+			if _plant_shrub_mesh.get_surface_count() > 1:
+				inst.set_surface_override_material(0, _plant_shrub_stem_mat)
+				inst.set_surface_override_material(1, _plant_shrub_leaf_mat)
+			elif _plant_shrub_mat:
 				inst.material_override = _plant_shrub_mat
 			inst.scale = Vector3.ONE * 0.85
 		else:

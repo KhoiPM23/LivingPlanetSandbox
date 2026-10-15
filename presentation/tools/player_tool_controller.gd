@@ -193,6 +193,13 @@ func _update_mouse_raycast() -> void:
 		if vp_node:
 			mouse_pos = vp_node.get_mouse_position()
 
+	# Don't display 3D tool cursor if mouse is uninitialized at (0, 0) or off-screen
+	if mouse_pos == Vector2.ZERO:
+		_has_hit = false
+		if _brush_visual:
+			_brush_visual.visible = false
+		return
+
 	var ray_origin: Vector3 = _camera.project_ray_origin(mouse_pos)
 	var ray_dir: Vector3 = _camera.project_ray_normal(mouse_pos)
 

@@ -4,6 +4,7 @@ extends Node3D
 ## Primary entry point scene connecting WorldBootstrap, IslandTerrain, EnvironmentalGrid, Atmosphere, and HUD.
 
 const AtmosphereDirector = preload("res://presentation/environment/atmosphere_director.gd")
+const SpatialAudioDirector = preload("res://presentation/audio/spatial_audio_director.gd")
 
 @onready var bootstrap: WorldBootstrap = $WorldBootstrap
 @onready var terrain: IslandTerrain = $IslandTerrain
@@ -49,6 +50,14 @@ func _ready() -> void:
 		weather_fx.setup(weather, terrain, water, scatter, camera, env, sun)
 		print("[Main] Weather effects & surface reaction simulation initialized.")
 
+	# 3c. Setup Procedural Spatial Audio Director for Living World Immersion
+	var audio_dir: SpatialAudioDirector = SpatialAudioDirector.new()
+	audio_dir.name = "SpatialAudioDirector"
+	add_child(audio_dir)
+	if bootstrap and bootstrap.world_clock and weather:
+		audio_dir.setup(bootstrap.world_clock, weather, camera)
+		print("[Main] Procedural spatial audio initialized: wind gusts, lake shore ripples, bird calls & night crickets.")
+
 	# 4. Initialize Causal Ecosystem Simulation & Presentation
 	var eco_presentation: EcosystemPresentation = null
 	if bootstrap and bootstrap.ecosystem_coordinator and terrain:
@@ -81,11 +90,30 @@ func _ready() -> void:
 		hud.setup_controllers(bootstrap, tool_controller, camera)
 		print("[Main] Player experiment tools & observability HUD initialized.")
 
+	# 7. Apply persistent Graphics Quality Preset (Default: BALANCED for Intel Iris Xe)
+	var active_preset: GraphicsPresets.Preset = GraphicsPresets.load_from_config()
+	GraphicsPresets.apply_preset(active_preset, self)
+	print("[Main] Applied graphics preset: %s" % GraphicsPresets.get_preset_name(active_preset))
+
+func _process(_delta: float) -> void:
+	if bootstrap and bootstrap.ecosystem_coordinator and camera:
+		var cam_pos: Vector3 = camera.global_position if camera.is_inside_tree() else camera.position
+		var is_character: bool = (camera.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or camera.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER)
+		var is_grounded: bool = is_character or (cam_pos.y < 12.0)
+		var presence_pos: Vector3 = cam_pos
+		if is_character and camera.get_walker():
+			var walker: FirstPersonWalker = camera.get_walker()
+			presence_pos = walker.global_position if walker.is_inside_tree() else walker.position
+		bootstrap.ecosystem_coordinator.set_player_presence(presence_pos, is_grounded)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		if event.keycode == KEY_F12:
 			capture_screenshot("res://screenshot_first_playable.png")
+		elif event.keycode == KEY_H or event.keycode == KEY_F1:
+			if hud:
+				hud.visible = not hud.visible
+				print("[Main] HUD toggled: %s" % ("Visible" if hud.visible else "Hidden"))
 
 func capture_screenshot(path: String) -> void:
 	await RenderingServer.frame_post_draw

@@ -24,9 +24,9 @@ static func get_preset_name(preset: Preset) -> String:
 
 static func get_preset_description(preset: Preset) -> String:
 	match preset:
-		Preset.LOW: return "3D Scale 75%, MSAA Off, Shadows Off, Fog Off, 350 Grass, 160 Rain"
-		Preset.BALANCED: return "3D Scale 85%, MSAA Off, 2K Shadows (65m), Fog On, 700 Grass, 350 Rain"
-		Preset.CINEMATIC, Preset.HIGH: return "Native 100%, MSAA 2X, High Shadows (110m), Fog On, 1000 Grass, 550 Rain"
+		Preset.LOW: return "3D Scale 75%, MSAA Off, Shadows Off, Fog Off, 450 Grass, 160 Rain"
+		Preset.BALANCED: return "3D Scale 85%, MSAA Off, 2-Split Shadows (65m), Depth Fog, 900 Grass, 350 Rain"
+		Preset.CINEMATIC, Preset.HIGH: return "Native 100%, MSAA 2X, High Shadows (110m), SSAO & Volumetric Fog, 1400 Grass, 550 Rain"
 		_: return ""
 
 ## Applies rendering parameters across WorldEnvironment, DirectionalLight3D, and Viewport
@@ -41,7 +41,7 @@ static func apply_preset(preset: Preset, scene_root: Node) -> Dictionary:
 		"glow_enabled": true,
 		"fog_enabled": true,
 		"fog_density": 0.004,
-		"grass_count": 700,
+		"grass_count": 900,
 		"rain_amount": 350,
 		"snow_amount": 120
 	}
@@ -70,6 +70,11 @@ static func apply_preset(preset: Preset, scene_root: Node) -> Dictionary:
 	if viewport:
 		viewport.scaling_3d_scale = target_scale
 		viewport.msaa_3d = target_msaa
+		if target_scale < 1.0:
+			viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+			viewport.fsr_sharpness = 0.2
+		else:
+			viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 
 	# 2. Lighting & Shadows (DirectionalLight3D)
 	var sun: DirectionalLight3D = scene_root.find_child("DirectionalLight3D", true, false) as DirectionalLight3D
@@ -80,10 +85,15 @@ static func apply_preset(preset: Preset, scene_root: Node) -> Dictionary:
 				changes["shadow_enabled"] = false
 			Preset.BALANCED:
 				sun.shadow_enabled = true
-				sun.directional_shadow_max_distance = 65.0
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				sun.directional_shadow_blend_splits = true
+				sun.directional_shadow_fade_start = 0.85
+				sun.directional_shadow_max_distance = 100.0
 				changes["shadow_enabled"] = true
 			Preset.CINEMATIC, Preset.HIGH:
 				sun.shadow_enabled = true
+				sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				sun.directional_shadow_blend_splits = true
 				sun.directional_shadow_max_distance = 110.0
 				changes["shadow_enabled"] = true
 
@@ -93,38 +103,63 @@ static func apply_preset(preset: Preset, scene_root: Node) -> Dictionary:
 		var env: Environment = env_node.environment
 		match preset:
 			Preset.LOW:
+				env.ssao_enabled = false
 				env.glow_enabled = false
 				env.fog_enabled = false
-				env.fog_density = 0.002
+				env.volumetric_fog_enabled = false
+				changes["ssao_enabled"] = false
 				changes["glow_enabled"] = false
 				changes["fog_enabled"] = false
-				changes["fog_density"] = 0.002
+				changes["volumetric_fog_enabled"] = false
 			Preset.BALANCED:
+				env.ssao_enabled = true
+				env.ssao_radius = 1.3
+				env.ssao_intensity = 1.6
+				env.ssao_power = 1.5
+				env.ssao_detail = 0.5
 				env.glow_enabled = true
-				env.glow_intensity = 0.25
+				env.glow_intensity = 0.28
 				env.fog_enabled = true
-				env.fog_density = 0.004
+				env.fog_mode = Environment.FOG_MODE_DEPTH
+				env.fog_depth_begin = 85.0
+				env.fog_depth_end = 360.0
+				env.fog_depth_curve = 1.0
+				env.volumetric_fog_enabled = false
+				changes["ssao_enabled"] = true
 				changes["glow_enabled"] = true
 				changes["fog_enabled"] = true
-				changes["fog_density"] = 0.004
+				changes["volumetric_fog_enabled"] = false
 			Preset.CINEMATIC, Preset.HIGH:
+				env.ssao_enabled = true
+				env.ssao_radius = 1.6
+				env.ssao_intensity = 2.2
+				env.ssao_power = 1.5
+				env.ssao_detail = 0.6
 				env.glow_enabled = true
 				env.glow_intensity = 0.35
 				env.fog_enabled = true
-				env.fog_density = 0.004
+				env.fog_mode = Environment.FOG_MODE_DEPTH
+				env.fog_depth_begin = 85.0
+				env.fog_depth_end = 360.0
+				env.fog_depth_curve = 1.0
+				env.volumetric_fog_enabled = true
+				env.volumetric_fog_density = 0.0022
+				env.volumetric_fog_anisotropy = 0.68
+				changes["ssao_enabled"] = true
 				changes["glow_enabled"] = true
 				changes["fog_enabled"] = true
-				changes["fog_density"] = 0.004
+				changes["volumetric_fog_enabled"] = true
+				changes["volumetric_fog_density"] = 0.0022
 
 	# 4. Grass MultiMesh Density (VegetationScatter)
 	var scatter: VegetationScatter = scene_root.find_child("VegetationScatter", true, false) as VegetationScatter
 	if scatter and scatter._grass_multimesh and scatter._grass_multimesh.multimesh:
 		var mm: MultiMesh = scatter._grass_multimesh.multimesh
-		var target_instances: int = 700
+		var target_instances: int = 900
 		match preset:
-			Preset.LOW: target_instances = 350
-			Preset.BALANCED: target_instances = 700
-			Preset.CINEMATIC, Preset.HIGH: target_instances = 1000
+			Preset.LOW: target_instances = 450
+			Preset.BALANCED: target_instances = 900
+			Preset.CINEMATIC, Preset.HIGH: target_instances = 1400
 		mm.visible_instance_count = mini(target_instances, mm.instance_count)
 		changes["grass_count"] = mm.visible_instance_count
 

@@ -17,7 +17,9 @@ enum HerbivoreState {
 	EATING = 2,
 	RESTING = 3,
 	FLEEING = 4,
-	STARVING = 5
+	STARVING = 5,
+	DRINKING = 6,
+	ALERT = 7
 }
 
 enum PredatorState {
@@ -25,7 +27,9 @@ enum PredatorState {
 	HUNTING = 1,
 	EATING = 2,
 	RESTING = 3,
-	STARVING = 4
+	STARVING = 4,
+	DRINKING = 5,
+	ALERT = 6
 }
 
 class AnimalBase:
@@ -44,6 +48,10 @@ class AnimalBase:
 	var reproduce_cooldown: float = 20.0
 	var target_pos: Vector3 = Vector3.ZERO
 	var genome: EcosystemGenome = null
+	var wander_timer: float = 0.0
+	var wander_interval: float = 2.0
+	var desync_offset: float = 0.0
+	var state_timer: float = 0.0
 
 class HerbivoreData extends AnimalBase:
 	var state: HerbivoreState = HerbivoreState.WANDERING
@@ -88,7 +96,20 @@ var _entity_registry: EntityRegistry
 var _metrics: EcosystemMetrics
 var _event_bus: WorldEventBus
 
+var _player_pos: Vector3 = Vector3.ZERO
+var _player_present: bool = false
+
 const ISLAND_MAX_RADIUS: float = 68.0
+
+func set_player_presence(player_pos: Vector3, is_present: bool) -> void:
+	_player_pos = player_pos
+	_player_present = is_present
+
+func get_player_position() -> Vector3:
+	return _player_pos
+
+func is_player_present() -> bool:
+	return _player_present
 
 func _init(rng: RandomNumberGenerator, registry: EntityRegistry, metrics: EcosystemMetrics, bus: WorldEventBus = null) -> void:
 	_rng = rng if rng != null else RandomNumberGenerator.new()
@@ -105,6 +126,9 @@ func spawn_herbivore(pos: Vector3, initial_energy: float = 80.0, stage: LifeStag
 	h.life_stage = stage
 	h.age = 30.0 if stage == LifeStage.ADULT else (0.0 if stage == LifeStage.JUVENILE else 110.0)
 	h.heading = _rng.randf() * TAU
+	h.wander_interval = _rng.randf_range(1.6, 3.4)
+	h.wander_timer = _rng.randf_range(0.0, h.wander_interval)
+	h.desync_offset = _rng.randf_range(0.0, 5.0)
 	_herbivores[id] = h
 
 	if _entity_registry:
@@ -132,6 +156,9 @@ func spawn_predator(pos: Vector3, initial_energy: float = 80.0, genome: Ecosyste
 	var p: PredatorData = PredatorData.new(id, pos, genome)
 	p.energy = initial_energy
 	p.heading = _rng.randf() * TAU
+	p.wander_interval = _rng.randf_range(1.8, 3.6)
+	p.wander_timer = _rng.randf_range(0.0, p.wander_interval)
+	p.desync_offset = _rng.randf_range(0.0, 5.0)
 	_predators[id] = p
 
 	if _entity_registry:
@@ -203,7 +230,7 @@ func get_all_predators() -> Array:
 	return _predators.values()
 
 ## Step simulation for all fauna: updates metabolism, AI decisions, foraging, and predator-prey dynamics
-func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Callable, weather: RefCounted = null) -> void:
+func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Callable, weather: RefCounted = null, sim_hour: float = 12.0) -> void:
 	var herbivore_deaths: Array[Dictionary] = []
 	var herbivore_births: Array = []
 	var predator_deaths: Array[Dictionary] = []
@@ -241,8 +268,10 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 		else:
 			h.life_stage = LifeStage.JUVENILE
 
-		# Metabolism (energy drain based on genome trade-off and weather chill)
+		# Metabolism (energy drain based on genome trade-off, resting state, and weather chill)
 		var burn_mult: float = (h.genome.get_metabolic_burn_multiplier() if h.genome else 1.0) * weather_burn_mult
+		if h.state == HerbivoreState.RESTING:
+			burn_mult *= 0.50 # Resting sleep conservation
 		var metabolic_drain: float = 1.0 * delta * burn_mult
 		if h.velocity.length_squared() > 0.1:
 			metabolic_drain += 0.5 * delta * (h.genome.speed if h.genome else 1.0) * weather_burn_mult
@@ -281,12 +310,52 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 				flee_dir = flee_dir.normalized()
 			h.velocity = flee_dir * (h.move_speed * 1.25 * weather_speed_mult)
 			_move_animal(h, delta, height_callable)
+		elif _player_present and h.position.distance_to(_player_pos) < 7.0:
+			# Player presence: Close approach triggers immediate flight
+			h.state = HerbivoreState.FLEEING
+			h.threat_id = -999 # Distinguish player encounter from predator
+			var flee_dir: Vector3 = (h.position - _player_pos)
+			flee_dir.y = 0.0
+			if flee_dir.length_squared() < 0.01:
+				flee_dir = Vector3(cos(h.heading), 0.0, sin(h.heading))
+			else:
+				flee_dir = flee_dir.normalized()
+			h.velocity = flee_dir * (h.move_speed * 1.35 * weather_speed_mult)
+			_move_animal(h, delta, height_callable)
+		elif _player_present and h.position.distance_to(_player_pos) < 14.0 and h.state != HerbivoreState.FLEEING:
+			# Player presence: Mid-range vigilance / observation
+			h.state = HerbivoreState.ALERT
+			var to_player: Vector3 = (_player_pos - h.position)
+			to_player.y = 0.0
+			if to_player.length_squared() > 0.01:
+				h.heading = atan2(to_player.z, to_player.x)
+			h.velocity = Vector3.ZERO
 		else:
-			# Not fleeing: AI behavior based on energy
+			# If previously fleeing player and player has retreated, recover to wandering
+			if h.state == HerbivoreState.FLEEING and h.threat_id == -999:
+				h.state = HerbivoreState.WANDERING
+				h.threat_id = -1
+
+			# Not fleeing: AI behavior based on energy and diurnal phase
 			var max_e: float = h.genome.get_effective_max_energy() if h.genome else 100.0
 			var max_hp: float = h.genome.get_effective_max_health() if h.genome else 100.0
 
-			if h.state == HerbivoreState.EATING:
+			if h.state == HerbivoreState.DRINKING:
+				h.eat_timer += delta
+				h.velocity = Vector3.ZERO
+				h.energy = minf(max_e, h.energy + 3.0 * delta)
+				h.health = minf(max_hp, h.health + 1.5 * delta)
+				if h.eat_timer >= 3.0 or h.energy >= (max_e * 0.95):
+					h.state = HerbivoreState.WANDERING
+					h.eat_timer = 0.0
+			elif h.state == HerbivoreState.RESTING:
+				h.state_timer += delta
+				h.velocity = Vector3.ZERO
+				# Sleep wake conditions: hungry, rested enough (>25s), or daybreak (>= 5.5h)
+				if h.energy < 40.0 or h.state_timer > 30.0 or (sim_hour >= 5.5 and sim_hour < 20.0):
+					h.state = HerbivoreState.WANDERING
+					h.state_timer = 0.0
+			elif h.state == HerbivoreState.EATING:
 				h.eat_timer += delta
 				if flora_sim:
 					var intake_rate: float = h.genome.get_effective_intake_rate(2.5) if h.genome else 2.5
@@ -300,6 +369,11 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 						h.state = HerbivoreState.WANDERING
 						h.eat_timer = 0.0
 						h.target_plant_id = -1
+				h.velocity = Vector3.ZERO
+			elif (sim_hour >= 20.5 or sim_hour < 5.0) and h.energy >= 45.0 and h.position.x < 1.0 and h.position.x > -14.0 and h.position.z < 4.5 and h.position.z > -8.0:
+				# Nighttime under Whispering Forest canopy: Bed down and rest
+				h.state = HerbivoreState.RESTING
+				h.state_timer = 0.0
 				h.velocity = Vector3.ZERO
 			elif h.energy < (max_e * 0.80):
 				# Hungry: Seek food with sense_range
@@ -328,12 +402,26 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 						h.velocity = to_food.normalized() * (h.move_speed * weather_speed_mult)
 						_move_animal(h, delta, height_callable)
 				else:
-					# No food nearby: wander to find grazing grounds
-					_wander_animal(h, delta, height_callable, weather_speed_mult)
+					# No food nearby: check drinking if near shoreline, else wander
+					var is_shore: bool = (h.position.y <= 0.85 and h.position.y >= 0.18)
+					var drink_chance: float = 0.35 if (sim_hour >= 16.0 and sim_hour <= 18.5) else 0.10
+					if is_shore and _rng.randf() < drink_chance:
+						h.state = HerbivoreState.DRINKING
+						h.eat_timer = 0.0
+						h.velocity = Vector3.ZERO
+					else:
+						_wander_animal(h, delta, height_callable, weather_speed_mult, sim_hour)
 			else:
-				# Full / Content: Wander peacefully or rest
-				h.state = HerbivoreState.WANDERING
-				_wander_animal(h, delta, height_callable, weather_speed_mult)
+				# Full / Content: Check if near shoreline for drinking (especially during golden hour), else herd graze / wander
+				var is_shore: bool = (h.position.y <= 0.85 and h.position.y >= 0.18)
+				var drink_chance: float = 0.35 if (sim_hour >= 16.0 and sim_hour <= 18.5) else 0.05
+				if is_shore and _rng.randf() < drink_chance:
+					h.state = HerbivoreState.DRINKING
+					h.eat_timer = 0.0
+					h.velocity = Vector3.ZERO
+				else:
+					h.state = HerbivoreState.WANDERING
+					_wander_animal(h, delta, height_callable, weather_speed_mult, sim_hour)
 
 		# Reproduction (Adult with high energy & health)
 		if h.life_stage == LifeStage.ADULT and h.energy >= 75.0 and h.health >= 70.0 and h.reproduce_cooldown <= 0.0:
@@ -394,7 +482,34 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 		var p_max_e: float = p.genome.get_effective_max_energy() if p.genome else 100.0
 		var p_max_hp: float = p.genome.get_effective_max_health() if p.genome else 100.0
 
-		if p.state == PredatorState.EATING:
+		var p_dist_player: float = p.position.distance_to(_player_pos) if _player_present else 999.0
+		if _player_present and p_dist_player < 5.5 and p.energy < 40.0:
+			# Starving/weak predator retreats from player presence
+			var flee_dir: Vector3 = (p.position - _player_pos)
+			flee_dir.y = 0.0
+			p.velocity = flee_dir.normalized() * (p.move_speed * 1.15 * weather_speed_mult)
+			_move_animal(p, delta, height_callable)
+		elif _player_present and p_dist_player < 10.0 and p.state == PredatorState.WANDERING:
+			p.state = PredatorState.ALERT
+			var to_player: Vector3 = (_player_pos - p.position)
+			to_player.y = 0.0
+			if to_player.length_squared() > 0.01:
+				p.heading = atan2(to_player.z, to_player.x)
+			p.velocity = Vector3.ZERO
+		elif p.state == PredatorState.DRINKING:
+			p.eat_timer += delta
+			p.velocity = Vector3.ZERO
+			p.energy = minf(p_max_e, p.energy + 2.5 * delta)
+			if p.eat_timer >= 2.5:
+				p.state = PredatorState.WANDERING
+				p.eat_timer = 0.0
+		elif p.state == PredatorState.RESTING:
+			p.state_timer += delta
+			p.velocity = Vector3.ZERO
+			if p.energy < 45.0 or p.state_timer > 25.0:
+				p.state = PredatorState.WANDERING
+				p.state_timer = 0.0
+		elif p.state == PredatorState.EATING:
 			p.eat_timer += delta
 			p.velocity = Vector3.ZERO
 			if p.eat_timer >= 3.0 or p.energy >= (p_max_e * 0.95):
@@ -421,14 +536,22 @@ func step_simulation(delta: float, flora_sim: RefCounted, height_callable: Calla
 					p.eat_timer = 0.0
 					p.velocity = Vector3.ZERO
 				else:
-					p.velocity = to_prey.normalized() * (p.move_speed * weather_speed_mult)
+					var hunt_speed_mult: float = 1.25 if dist <= 8.0 else 0.75
+					p.velocity = to_prey.normalized() * (p.move_speed * hunt_speed_mult * weather_speed_mult)
 					_move_animal(p, delta, height_callable)
 			else:
 				# No prey found: wander
-				_wander_animal(p, delta, height_callable, weather_speed_mult)
+				_wander_animal(p, delta, height_callable, weather_speed_mult, sim_hour)
 		else:
-			p.state = PredatorState.WANDERING
-			_wander_animal(p, delta, height_callable, weather_speed_mult)
+			var is_shore: bool = (p.position.y <= 0.85 and p.position.y >= 0.18)
+			var p_drink_chance: float = 0.25 if (sim_hour >= 16.0 and sim_hour <= 18.5) else 0.05
+			if is_shore and _rng.randf() < p_drink_chance:
+				p.state = PredatorState.DRINKING
+				p.eat_timer = 0.0
+				p.velocity = Vector3.ZERO
+			else:
+				p.state = PredatorState.WANDERING
+				_wander_animal(p, delta, height_callable, weather_speed_mult, sim_hour)
 
 		# Predator reproduction (Sexual recombination if compatible mate is nearby, else single-parent)
 		if p.energy >= 85.0 and p.health >= 80.0 and p.reproduce_cooldown <= 0.0 and _predators.size() < 6:
@@ -512,10 +635,97 @@ func _move_animal(animal: AnimalBase, delta: float, height_callable: Callable) -
 	if animal.velocity.length_squared() > 0.1:
 		animal.heading = atan2(animal.velocity.z, animal.velocity.x)
 
-func _wander_animal(animal: AnimalBase, delta: float, height_callable: Callable, speed_mult: float = 1.0) -> void:
-	# Small random steering turn
-	animal.heading += _rng.randf_range(-0.4, 0.4)
-	animal.velocity = Vector3(cos(animal.heading), 0.0, sin(animal.heading)) * (animal.move_speed * 0.5 * speed_mult)
+func _wander_animal(animal: AnimalBase, delta: float, height_callable: Callable, speed_mult: float = 1.0, sim_hour: float = 12.0) -> void:
+	var steer: Vector3 = Vector3(cos(animal.heading), 0.0, sin(animal.heading))
+
+	if animal.type == "herbivore":
+		var separation: Vector3 = Vector3.ZERO
+		var cohesion_center: Vector3 = Vector3.ZERO
+		var neighbor_count: int = 0
+
+		for other in _herbivores.values():
+			if other.id == animal.id:
+				continue
+			var offset: Vector3 = animal.position - other.position
+			offset.y = 0.0
+			var dist: float = offset.length()
+			if dist < 0.001:
+				continue
+			if dist < 2.4:
+				# Repel strongly if too close (avoid overlapping & personal space)
+				separation += (offset / (dist * dist)) * 2.0
+			elif dist < 16.0:
+				# Cohesion: gather toward herd center of mass
+				cohesion_center += other.position
+				neighbor_count += 1
+
+		if neighbor_count > 0:
+			cohesion_center /= float(neighbor_count)
+			var to_center: Vector3 = cohesion_center - animal.position
+			to_center.y = 0.0
+			steer += to_center.normalized() * 0.45
+
+		if separation.length_squared() > 0.001:
+			steer += separation.normalized() * 1.35
+
+		# Diurnal Attraction Niches:
+		if sim_hour >= 20.5 or sim_hour < 5.0:
+			# Nighttime: steer toward Whispering Forest canopy for shelter
+			var to_forest: Vector3 = Vector3(-6.0, 0.0, -2.0) - Vector3(animal.position.x, 0.0, animal.position.z)
+			steer += to_forest.normalized() * 0.35
+		elif sim_hour >= 16.0 and sim_hour <= 18.5:
+			# Golden Hour / Dusk: steer toward Emerald Basin Cove & Creek Delta for watering
+			var to_basin: Vector3 = Vector3(16.0, 0.0, 13.0) - Vector3(animal.position.x, 0.0, animal.position.z)
+			steer += to_basin.normalized() * 0.38
+		else:
+			# Daytime: gentle pull toward Sunlit Meadow Glade (grazing)
+			var to_glade: Vector3 = Vector3(8.5, 0.0, 3.5) - Vector3(animal.position.x, 0.0, animal.position.z)
+			steer += to_glade.normalized() * 0.25
+
+	elif animal.type == "predator":
+		# Predators maintain stalking distance from other predators
+		var p_sep: Vector3 = Vector3.ZERO
+		for other_p in _predators.values():
+			if other_p.id == animal.id:
+				continue
+			var p_offset: Vector3 = animal.position - other_p.position
+			p_offset.y = 0.0
+			var p_dist: float = p_offset.length()
+			if p_dist < 8.0 and p_dist > 0.001:
+				p_sep += (p_offset / p_dist) * 1.5
+		if p_sep.length_squared() > 0.001:
+			steer += p_sep.normalized() * 0.8
+
+		# Predators patrol high ridge / forest edge during day, descend near basin at dusk
+		if sim_hour >= 16.0 and sim_hour <= 19.0:
+			var to_ambush: Vector3 = Vector3(10.0, 0.0, 10.0) - Vector3(animal.position.x, 0.0, animal.position.z)
+			steer += to_ambush.normalized() * 0.30
+
+	# Terrain obstacle / steep cliff and water edge avoidance
+	if height_callable.is_valid():
+		var ahead: Vector3 = animal.position + Vector3(cos(animal.heading), 0.0, sin(animal.heading)) * 1.4
+		var y_ahead: float = height_callable.call(ahead.x, ahead.z)
+		var slope_diff: float = y_ahead - animal.position.y
+		if slope_diff > 1.1:
+			var side_steer: Vector3 = Vector3(-sin(animal.heading), 0.0, cos(animal.heading))
+			steer += side_steer * 1.6
+		elif y_ahead < 0.24:
+			var to_center: Vector3 = -animal.position.normalized()
+			steer += to_center * 1.8
+
+	# Desynchronized individual wander heading updates
+	animal.wander_timer += delta
+	var random_turn: float = 0.0
+	if animal.wander_timer >= animal.wander_interval:
+		animal.wander_timer = 0.0
+		animal.wander_interval = _rng.randf_range(1.6, 3.4)
+		random_turn = _rng.randf_range(-0.40, 0.40)
+
+	var base_heading: float = atan2(steer.z, steer.x) if steer.length_squared() > 0.01 else animal.heading
+	animal.heading = lerp_angle(animal.heading, base_heading + random_turn, 0.25)
+
+	var wander_speed: float = animal.move_speed * 0.48 * speed_mult
+	animal.velocity = Vector3(cos(animal.heading), 0.0, sin(animal.heading)) * wander_speed
 	_move_animal(animal, delta, height_callable)
 
 func _find_nearest_predator(pos: Vector3, max_dist: float) -> PredatorData:

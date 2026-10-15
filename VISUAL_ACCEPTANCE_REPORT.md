@@ -76,10 +76,12 @@ Kết quả đo đạc trực tiếp từ test runner benchmark windowed trên m
 - **Độ phân giải hiển thị:** 1280×720
 - **Graphics Preset:** Balanced
 - **Entities hoạt động:** 55 thực vật, 14 động vật ăn cỏ (Stag/Deer), 2 dã thú săn mồi (Wolf), 1024 ô vi khí hậu.
-- **Tốc độ khung hình trung bình (Avg FPS):** **24.6 – 33.0 FPS** (ổn định tương tác mượt mà trên đồ họa tích hợp Intel Xe).
-- **Số lượng Primitives / Frame:** 953,998 đỉnh (duy trì dưới ngưỡng 1 triệu primitive an toàn cho Intel Xe).
-- **Draw Calls:** 541 draw calls / frame.
-- **Dung lượng VRAM / Static Memory:** 91.64 MB.
+- **Tốc độ khung hình trung bình (Avg FPS):** **25.9 – 33.0 FPS** (ổn định tương tác mượt mà trên đồ họa tích hợp Intel Xe).
+- **Số lượng Primitives / Frame:** 958,952 đỉnh (duy trì an toàn dưới ngưỡng 1 triệu primitive của Intel Xe).
+- **Draw Calls:** 588 draw calls / frame.
+- **Dung lượng VRAM / Static Memory:** 94.11 MB.
+- **Hệ thống Âm thanh Không gian:** Procedural Spatial Audio với 5 kênh thời gian thực (gió, sóng hồ bờ vịnh, chim líu lo, dế đêm, mưa rào).
+- **Cân bằng Địa hình Sinh vật:** Thuật toán Terrain Slope Pitch Conformance đảm bảo sinh vật thích ứng góc dốc tự nhiên.
 
 ---
 

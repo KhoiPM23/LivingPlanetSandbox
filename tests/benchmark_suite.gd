@@ -28,8 +28,8 @@ var _tier_configs: Dictionary = {
 
 var _main_scene: Node = null
 var _frame_count: int = 0
-const WARMUP_FRAMES: int = 25
-const MEASURE_FRAMES: int = 160
+const WARMUP_FRAMES: int = 45
+const MEASURE_FRAMES: int = 120
 
 # Telemetry sample buffers
 var _frame_times: Array[float] = []
@@ -82,6 +82,16 @@ func _launch_tier(tier: LoadTier) -> void:
 	if bs and bs.ecosystem_coordinator:
 		bs.ecosystem_coordinator.populate_initial_ecosystem(cfg["plants"], cfg["herbivores"], cfg["predators"])
 
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var p_tier: GraphicsPresets.Preset = GraphicsPresets.Preset.BALANCED
+	if tier == LoadTier.LIGHT: p_tier = GraphicsPresets.Preset.LOW
+	elif tier == LoadTier.STRESS: p_tier = GraphicsPresets.Preset.CINEMATIC
+	var applied_changes: Dictionary = GraphicsPresets.apply_preset(p_tier, _main_scene)
+	print("    Applied Benchmark Preset: %s (Scale: %.2f, Grass: %d)" % [
+		GraphicsPresets.get_preset_name(p_tier),
+		applied_changes.get("scaling_3d_scale", 1.0),
+		applied_changes.get("grass_count", 0)
+	])
 
 	_gen_duration_ms = float(Time.get_ticks_usec() - gen_start_usec) / 1000.0
 	print("    World Generation & Population Time: %.2f ms" % _gen_duration_ms)

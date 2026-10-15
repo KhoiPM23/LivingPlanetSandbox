@@ -4,13 +4,17 @@
 [ext_resource type="Texture2D" uid="uid://c307hdmos4gtm" path="res://demo/assets/textures/rock023_nrm_rgh.png" id="2_pp13c"]
 
 [resource]
-vertex_color_use_as_albedo = true
-albedo_color = Color(0.83, 0.83, 0.83, 1)
+vertex_color_use_as_albedo = false
+albedo_color = Color(0.88, 0.88, 0.88, 1)
 albedo_texture = ExtResource("1_mek0c")
+roughness = 0.92
+roughness_texture = ExtResource("2_pp13c")
+roughness_texture_channel = 3
 normal_enabled = true
+normal_scale = 1.2
 normal_texture = ExtResource("2_pp13c")
-uv1_scale = Vector3(0.02, 0.02, 0.02)
+uv1_scale = Vector3(0.35, 0.35, 0.35)
 uv1_triplanar = true
-uv1_triplanar_sharpness = 6.06286
+uv1_triplanar_sharpness = 4.0
 uv1_world_triplanar = true
 texture_filter = 5

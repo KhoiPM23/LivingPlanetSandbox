@@ -194,12 +194,13 @@ func _process(delta: float) -> void:
 		gmat.set_shader_parameter("wind_strength", 0.22 + eff_wind * 0.08)
 		gmat.set_shader_parameter("wetness", surf_wetness)
 
-	var tree_foliage_mat: ShaderMaterial = TreePine.get_shared_foliage_material()
-	if tree_foliage_mat:
-		tree_foliage_mat.set_shader_parameter("wind_dir", wind_dir)
-		tree_foliage_mat.set_shader_parameter("wind_speed", 0.75 + eff_wind * 0.22)
-		tree_foliage_mat.set_shader_parameter("wind_strength", 0.12 + eff_wind * 0.05)
-		tree_foliage_mat.set_shader_parameter("wetness", surf_wetness)
+	for tmat in [TreePine.get_shared_kaykit_material(), TreePine.get_shared_kenney_material()]:
+		if tmat:
+			tmat.set_shader_parameter("wind_dir", wind_dir)
+			tmat.set_shader_parameter("wind_speed", 0.75 + eff_wind * 0.22)
+			tmat.set_shader_parameter("wind_strength", 0.12 + eff_wind * 0.05)
+			tmat.set_shader_parameter("wetness", surf_wetness)
+
 
 	# 5. Smooth Atmospheric Fog & Lighting
 	if _world_env and _world_env.environment:

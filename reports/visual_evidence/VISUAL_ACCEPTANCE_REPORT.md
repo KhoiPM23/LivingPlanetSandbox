@@ -85,7 +85,7 @@ Kết quả đo đạc trực tiếp từ test runner benchmark windowed trên m
 
 ## 4. REGRESSION & CONTRACT TEST VERIFICATION
 
-Chạy toàn bộ 16 test suites với 92 bài test kiểm thử tự động:
+Chạy toàn bộ 17 test suites với 99 bài test kiểm thử tự động cùng 7 bài smoke test:
 ```
 =======================================================
    LIVING PLANET SANDBOX — AUTOMATED CONTRACT TESTS   
@@ -106,11 +106,33 @@ Chạy toàn bộ 16 test suites với 92 bài test kiểm thử tự động:
 >>> TestWeatherAndSurface (Wetness, Wind Coupling): 8/8 PASS
 >>> TestGraphicsAndEvolutionTelemetry: 8/8 PASS
 >>> TestCausalExperimentTools: 10/10 PASS
+>>> TestFoliageOpacityRegression: 7/7 PASS
 -------------------------------------------------------
-TEST RESULTS: Passed: 92 | Failed: 0 (100% GREEN)
+TEST RESULTS: Passed: 99 | Failed: 0 (100% GREEN)
+SMOKE TESTS: Passed: 7 | Failed: 0 (100% GREEN)
 -------------------------------------------------------
 ```
-Tất cả các cơ chế cốt lõi (WorldSeed, Schema v3 Save/Load, RNG isolation, 13 công cụ can thiệp sinh thái, Weather cycle) đều được bảo toàn nguyên vẹn.
+Tất cả các cơ chế cốt lõi (WorldSeed, Schema v3 Save/Load, RNG isolation, 13 công cụ can thiệp sinh thái, Weather cycle, 5 Grove Clusters, Animal Trail geomorphology) đều được bảo toàn nguyên vẹn.
+
+---
+
+## 5. SHOWCASE REGION RECONSTRUCTION SUMMARY ("WHISPERING GLADE & EMERALD BASIN")
+
+1. **Art Direction có chủ đích (Painterly Naturalism / Stylized Realism):**
+   - Palette Tokens chuẩn hóa: Boreal Conifer (`#1b3a24`), Meadow Grass (`#5a7d2c`), Forest Loam (`#33241b`), Granite Bluff (`#4d5054`), Shoreline Silt (`#6e634e`), Emerald Water (`#264d54`).
+   - Xóa bỏ hoàn toàn hiện tượng "bộ asset rải đều như bàn cờ": Cây mọc theo 5 cụm tự nhiên (Whispering Forest Stand, North Ridge Conifers, Creek Copse, Lake Bluff Stand, Outer Wilderness).
+   - Bảo vệ tuyệt đối **Hành lang quan sát trảng cỏ (Glade Clearance Corridor)** ($X: 5.0 \to 16.5, Z: 0.0 \to 9.5$) để đàn hươu gặm cỏ và camera có tầm nhìn thoáng đãng.
+2. **Địa mạo & Lối mòn động vật (Animal Trail Geomorphology):**
+   - Lối mòn hình chữ S uốn lượn tự nhiên từ bìa rừng dẫn qua thảm cỏ xuống bờ vịnh hồ.
+   - Mặt đất trên lối mòn được nén chặt, đổi màu sang đất mùn sẫm (`#33241b`) và tự động triệt tiêu cỏ mọc trùm lên (`trail_factor > 0.32`).
+3. **Bãi đá đổ Talus & Đá lòng suối (Geological Rock Placement):**
+   - 14 tảng đá hoa cương lớn nhỏ (`RockA/B/C`) gom cụm tự nhiên dưới chân vách Eastern Granite Bluff, cắm sâu 0.22m vào sườn dốc $22^\circ$ chống cảm giác nổi trên mặt đất.
+   - Đá cuội và sỏi nhẵn rải rác dọc theo dòng suối Valley Creek và mép nước vịnh hồ.
+4. **Phân lớp môi trường 4 tầng (Foreground, Midground, Background, Ground):**
+   - **Foreground:** Cỏ 3D đa phiến lá, hoa dại, sỏi nhỏ, tảng đá rêu bám sát camera.
+   - **Midground:** Đàn hươu đực gạc lớn đang di chuyển/ăn cỏ, mặt nước vịnh hồ lăn tăn với hoa súng bập bềnh, rặng thông bên sườn dốc.
+   - **Background:** Đỉnh núi tuyết NW cao 24m và tháp cổ Summit Monolith in bóng trên nền trời.
+   - **Ground Layer:** Triplanar PBR với macro-variation detiling triệt tiêu hoàn toàn ô lặp texture ở cự ly xa.
 
 ---
 

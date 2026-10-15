@@ -62,5 +62,33 @@ Báo cáo trước đó xác nhận hệ thống mô phỏng, logic sinh thái, 
 
 ---
 
-### 4. KẾ HOẠCH HÀNH ĐỘNG TIẾP THEO
-Tiếp tục bước sang **PHASE B** để kiểm kê, tải và chuẩn bị các asset 3D thực vật/sinh vật mã nguồn mở CC0/MIT hợp lệ, sau đó triển khai trực tiếp vào Vertical Slice mẫu ở **PHASE C**.
+### 4. KẾT QUẢ TRIỂN KHAI NÂNG CẤP VÀ KHẮC PHỤC 5 KHUYẾT TẬT THỊ GIÁC
+
+Trong đợt Visual Fidelity Pass, 5 khuyết tật thị giác phá hủy tính chân thực nghiêm trọng nhất đã được xác định và khắc phục triệt để:
+
+1. **Khuyết tật 1: Lòng hồ hố tròn nhân tạo (Crater Puddle Lake):**
+   - *Nguyên nhân:* Hồ nước cũ chỉ là một hình tròn hoàn hảo bán kính $R \approx 11m$ tại $(18.0, 14.0)$ với thành dốc phẳng và bờ bùn trơn tuột.
+   - *Khắc phục:* Điêu khắc lại vịnh hồ Emerald Basin hình bầu dục uốn lượn tự nhiên dài 24m, tạo nhánh suối nguồn Valley Creek bắt nguồn từ sườn núi Tây Bắc $(-2.0, 4.0)$ chảy ngoằn ngoèo xuống lòng hồ $(12.0, 11.0)$, bổ sung vách đá hoa cương vững chãi (Rocky Bluff) án ngữ phía Đông $(24.0, 16.0)$, rải đá cuội PBR, hoa súng nổi (`lily_large`), và cỏ lau sậy mép nước.
+
+2. **Khuyết tật 2: Thảm cỏ thưa thớt, tam giác phẳng lơ lửng trên dốc (Sparse Floating Grass):**
+   - *Nguyên nhân:* Cỏ chỉ gồm 800 tam giác đơn lẻ rải phẳng, mật độ 0.035 khóm/$m^2$, vuông góc với trục thẳng đứng Y bất kể độ dốc khiến cỏ bị cắm lơ lửng hoặc chìm vào lòng đất khi địa hình nghiêng.
+   - *Khắc phục:* Tăng mật độ thảm cỏ lên 1,450 khóm 3D đa phiến lá, tập trung 55% vào thung lũng Showcase Valley (0.18–0.25 khóm/$m^2$), áp dụng ma trận xoay bám theo vector pháp tuyến địa hình (`align_with_surface_normal()`), đổ dải màu gradient tự nhiên (`albedo_bottom` lục sẫm rêu phong sang `albedo_top` mạ non óng ả), và tích hợp tán xạ ánh sáng ngược Subsurface Scattering Backlight trong shader.
+
+3. **Khuyết tật 3: Chiếu sáng trắng đục và lỗi bầu trời đêm (Washed-out Fog & Night Whiteout):**
+   - *Nguyên nhân:* Ambient light sky contribution quá cao (0.60) triệt tiêu bóng đổ, và `day_night_cycle.gd` có bug lerp `fog_light_color` vào ban đêm hướng về màu cyan ban ngày `Color(0.65, 0.75, 0.88)`, biến đêm thành biển sữa trắng xóa.
+   - *Khắc phục:* Sửa triệt để bug lerp đêm (`target_horizon.lerp(Color(...), day_factor * 0.25)`), trả lại bầu trời đêm đen thẫm tĩnh mịch; hạ ambient contribution xuống 0.40 để bóng đổ dưới tán cây sâu thẳm; bổ sung ánh sáng vàng ấm giờ vàng (Golden Hour) và bật Screen-Space Ambient Occlusion (SSAO) để tạo bóng tiếp xúc giữa cỏ, đá và mặt đất.
+
+4. **Khuyết tật 4: Động vật lơ lửng và trượt chân trên sườn dốc (Sliding Animals on Inclines):**
+   - *Nguyên nhân:* Khi leo dốc núi hoặc đi xuống thung lũng, mô hình hươu và sói luôn giữ góc chúc/ngẩng bằng 0 (chỉ xoay yaw), khiến chân trước lơ lửng trong không khí còn chân sau bị vùi sâu vào vách đất.
+   - *Khắc phục:* Bổ sung thuật toán thích ứng độ dốc địa hình theo thời gian thực (**Terrain Slope Pitch Conformance**): lấy mẫu độ cao phía trước ($h_{fwd}$) và phía sau ($h_{back}$) theo sải chân 1.4m, tính góc ngẩng $\theta = \arctan((h_{fwd} - h_{back}) / 1.4)$ và lerp mượt mà vào `rotation.x`, giúp 4 chân của sinh vật bám sát tự nhiên vào sườn đồi dốc.
+
+5. **Khuyết tật 5: Thế giới hoàn toàn câm lặng (Zero Audio Immersion):**
+   - *Nguyên nhân:* Toàn bộ môi trường 3D chạy mà không có bất kỳ âm thanh nào, phá vỡ cảm giác thế giới sống (RDR2/GTA V immersion).
+   - *Khắc phục:* Xây dựng hệ thống âm thanh không gian thủ tục (`SpatialAudioDirector`): phát tiếng gió rít qua rặng thông điều biến theo vận tốc gió thời tiết, tiếng sóng vỗ bờ hồ 3D tại vịnh Emerald Basin, tiếng chim rừng líu lo ban ngày, tiếng dế đêm ngân nga khi mặt trời lặn, và tiếng mưa rào khi có bão.
+
+---
+
+### 5. TRẠNG THÁI HIỆN TẠI
+- Toàn bộ 9 ảnh nghiệm thu thị giác tại `reports/visual_evidence/` đã được chụp trực tiếp từ runtime Vulkan Forward+ 1280×720.
+- Hệ thống vượt qua 92/92 automated contract tests và 7/7 release smoke checks.
+- Tốc độ khung hình đo đạc thực tế: 25.9 – 33.0 FPS trên GPU tích hợp Intel Iris Xe.

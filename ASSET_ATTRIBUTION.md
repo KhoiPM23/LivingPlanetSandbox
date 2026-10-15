@@ -56,4 +56,49 @@ Tất cả tài nguyên 3D, vật liệu và âm thanh tích hợp vào Living P
 - **Giấy phép:** [MIT License](https://github.com/TokisanGames/Terrain3D/blob/main/LICENSE.txt)
 - **Tài nguyên sử dụng:**
   - `demo/assets/models/RockA.glb`, `RockB.glb`, `RockC.glb`: Các khối đá hoa cương tự nhiên có cấp độ chi tiết LOD.
-- **Tích hợp:** Rải tại chân núi, bãi biển và các trảng đá cheo leo.
+  - `demo/assets/materials/M_rock23_tp.tres`: Vật liệu World-Triplanar Normal PBR cho đá tảng.
+- **Tích hợp:** Nạp vào `RockBoulder` và rải tại bãi đá đổ Talus dưới chân vách Eastern Granite Bluff và lòng suối Valley Creek.
+
+---
+
+### 6. OPEN-SOURCE WATER SHADER TECHNIQUES
+- **Tác giả & Tham chiếu:**
+  - Emil Johansen (`emilje/godot-water-shader`: [https://github.com/emilje/godot-water-shader](https://github.com/emilje/godot-water-shader))
+  - Chrisknyfe (`Chrisknyfe/boujie_water_shader`: [https://github.com/Chrisknyfe/boujie_water_shader](https://github.com/Chrisknyfe/boujie_water_shader))
+- **Giấy phép:** [MIT License](https://opensource.org/licenses/MIT)
+- **Thuật toán & Kỹ thuật tích hợp:**
+  - `presentation/shaders/water.gdshader`: Triển khai sóng Gerstner 2 chiều, hấp thụ quang học theo độ sâu, khúc xạ quang học mặt nước (`screen_texture` refraction) làm méo hình sỏi đáy hồ, vi sóng gợn và bọt sóng shoreline foam.
+
+---
+
+### 7. OPEN-SOURCE FOLIAGE WIND SHADER TECHNIQUES
+- **Tác giả & Tham chiếu:**
+  - Caphindsight (`caphindsight/Foliage3D`: [https://github.com/caphindsight/Foliage3D](https://github.com/caphindsight/Foliage3D))
+  - Godot Shaders Community ([https://godotshaders.com](https://godotshaders.com))
+- **Giấy phép:** [MIT License](https://opensource.org/licenses/MIT)
+- **Thuật toán & Kỹ thuật tích hợp:**
+  - `presentation/shaders/foliage_wind.gdshader`: Triển khai Two-Sided Opaque Foliage Rendering (`render_mode cull_disabled, depth_draw_opaque;`), đảo chiều pháp tuyến mặt sau (`NORMAL = FRONT_FACING ? NORMAL : -NORMAL;`), dao động gió theo vector thời tiết, phản ứng mặt lá ướt và kiểm soát ánh sáng tán xạ (subsurface backlight).
+
+---
+
+### 8. GW TUTS GAME-READY HERO FOLIAGE & BOTANICAL ASSETS
+- **Tác giả:** Lakshman (GW Tuts: [https://github.com/Lakshman-YT/Forest-Godot4](https://github.com/Lakshman-YT/Forest-Godot4))
+- **Giấy phép:** [Open-Source Permissive Free Project](https://github.com/Lakshman-YT/Forest-Godot4/blob/main/README.md)
+- **Tài nguyên sử dụng:**
+  - **Mô hình thông tự nhiên (Hero Scots Pines):**
+    - `presentation/assets/foliage/pine1.gltf`, `pine1.bin` (ArrayMesh 2 surfaces: thân vỏ PBR & tán cành kim 3D).
+    - `presentation/assets/foliage/pine2.gltf`, `pine2.bin`.
+    - `presentation/assets/foliage/pine3.gltf`, `pine3.bin`.
+  - **Mô hình bụi hoa rậm (Hero Lilac Bushes):**
+    - `presentation/assets/foliage/bush1.gltf`, `bush1.bin` (Lilac sapling 2 surfaces: cành nhánh & cụm lá).
+    - `presentation/assets/foliage/bush2.gltf`, `bush2.bin`.
+  - **Bộ Texture PBR & Foliage Card Atlases:**
+    - `Cluster_albedo.png`, `pine_leaf_normal.jpg`, `pine_leaf_roughness.jpg`: Atlas cành lá kim thông chi tiết cao với kênh alpha cutout.
+    - `pine_bark_base.jpg`, `pine_bark_normal.jpg`, `pine_bark_roughness.jpg`: Vỏ cây thông nứt nẻ gồ ghề chân thực.
+    - `lilac_cards_color.png`, `lilac_cards_normal.jpg`, `lilac_cards_roughness.jpg`: Tấm lá bụi rậm lilac.
+    - `Lilac_bark_color.jpg`, `Lilac_bark_normal.jpg`: Vỏ cành thân bụi rậm.
+- **Tích hợp & Sửa đổi:**
+  - Tích hợp vào `TreePine` (`presentation/props/tree_pine.gd`), `VegetationScatter` (`presentation/environment/vegetation_scatter.gd`) và `EcosystemPresentation` (`presentation/ecosystem/ecosystem_presentation.gd`).
+  - Thay thế hoàn toàn các khối trụ cam sặc sỡ và nón hình học thô sơ (`Tree_4_A_Color1` / `nature.glb` toy cones) bằng mô hình thông có tỉ lệ sinh học chuẩn xác (cao 9.5m – 14.5m), phân bố thành các rặng thông tự nhiên.
+  - Phân tách 2 surface độc lập: Surface 0 sử dụng `StandardMaterial3D` với normal map và roughness map vỏ cây; Surface 1 sử dụng `foliage_wind.gdshader` với kỹ thuật Alpha Scissor (ngưỡng 0.40–0.45), Two-sided Normal Inversion, dao động cành theo gió và tán xạ ngược ánh sáng mặt trời (backlight translucency).
+

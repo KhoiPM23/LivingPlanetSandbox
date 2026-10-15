@@ -146,19 +146,27 @@ func test_first_person_walker_mode_and_transitions() -> bool:
 
 	var initial_mode_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FREE_LOOK
 
-	# Cycle 1: Free Flight -> First-Person Walker
+	# Cycle 1: Free Flight -> Third-Person Character
+	cam.cycle_camera_mode()
+	var third_person_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER
+	var third_person_name_ok: bool = cam.get_mode_name(cam.current_mode) == "Third-Person Character"
+
+	# Cycle 2: Third-Person Character -> First-Person Walker
 	cam.cycle_camera_mode()
 	var walker_mode_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER
 	var walker_name_ok: bool = cam.get_mode_name(cam.current_mode) == "First-Person Walker"
 
-	# Cycle 2: First-Person Walker -> Free Flight
+	# Cycle 3: First-Person Walker -> Free Flight
 	cam.cycle_camera_mode()
 	var returned_free_ok: bool = cam.current_mode == FreeLookCamera.CameraMode.FREE_LOOK
 	var returned_name_ok: bool = cam.get_mode_name(cam.current_mode) == "Free Flight"
 
-	# Stress test rapid mode toggles 5 times
+	# Stress test rapid mode cycles 5 full rounds (3 cycles per round)
 	var rapid_cycles_ok: bool = true
 	for i in range(5):
+		cam.cycle_camera_mode()
+		if cam.current_mode != FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
+			rapid_cycles_ok = false
 		cam.cycle_camera_mode()
 		if cam.current_mode != FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
 			rapid_cycles_ok = false
@@ -167,7 +175,7 @@ func test_first_person_walker_mode_and_transitions() -> bool:
 			rapid_cycles_ok = false
 
 	cam.free()
-	return initial_mode_ok and walker_mode_ok and walker_name_ok and returned_free_ok and returned_name_ok and rapid_cycles_ok
+	return initial_mode_ok and third_person_ok and third_person_name_ok and walker_mode_ok and walker_name_ok and returned_free_ok and returned_name_ok and rapid_cycles_ok
 
 func test_walker_physics_and_eye_height() -> bool:
 	var walker: FirstPersonWalker = FirstPersonWalker.new()

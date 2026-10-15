@@ -36,6 +36,9 @@ func run_all_tests() -> void:
 	_run_suite("TestWeatherAndSurface", preload("res://tests/test_weather_and_surface.gd").new())
 	_run_suite("TestGraphicsAndEvolutionTelemetry", preload("res://tests/test_graphics_and_evolution_telemetry.gd").new())
 	_run_suite("TestCausalExperimentTools", preload("res://tests/test_causal_experiment_tools.gd").new())
+	_run_suite("TestFoliageOpacityRegression", preload("res://tests/test_foliage_opacity_regression.gd").new())
+	_run_suite("TestEcosystemBehaviorAcceptance", preload("res://tests/test_ecosystem_behavior_acceptance.gd").new())
+
 
 
 

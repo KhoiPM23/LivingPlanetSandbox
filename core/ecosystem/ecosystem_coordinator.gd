@@ -26,6 +26,9 @@ var _weather_system: WeatherSystem
 var _scheduler: SimulationScheduler
 
 var _terrain_height_func: Callable = Callable()
+var terrain_height_func: Callable:
+	get:
+		return _terrain_height_func
 var is_active: bool = true
 
 func _init(
@@ -63,52 +66,101 @@ func _init(
 func bind_terrain_height(callable: Callable) -> void:
 	_terrain_height_func = callable
 
+func set_player_presence(player_pos: Vector3, is_active: bool) -> void:
+	if fauna_sim:
+		fauna_sim.set_player_presence(player_pos, is_active)
+
 func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14, predator_count: int = 2) -> void:
 	# Clear existing
 	flora_sim.clear()
 	fauna_sim.clear()
 	metrics.reset()
 
-	# 1. Spawn initial flora across habitable island cells
-	for i: int in range(plant_count):
+	# 1. Spawn initial flora clustered into ecological zones
+	var meadow_plants: int = int(plant_count * 0.50)
+	var basin_plants: int = int(plant_count * 0.25)
+	var forest_plants: int = int(plant_count * 0.15)
+	var scattered_plants: int = plant_count - (meadow_plants + basin_plants + forest_plants)
+
+	# 1a. Sunlit Meadow Glade (rich flower drifts & pasture grasses)
+	for i: int in range(meadow_plants):
+		var x: float = _rng.randf_range(3.5, 15.5)
+		var z: float = _rng.randf_range(0.0, 9.0)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 1.5
+		if y > 0.4:
+			var species: String = "shrub_bush" if (_rng.randf() < 0.25) else "grass_patch"
+			flora_sim.spawn_plant(species, Vector3(x, y, z), _rng.randf_range(3.0, 6.5))
+
+	# 1b. Emerald Basin Cove & Creek Delta (riparian ferns & shoreline brush)
+	for i: int in range(basin_plants):
+		var x: float = _rng.randf_range(11.5, 21.0)
+		var z: float = _rng.randf_range(8.5, 17.5)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 0.8
+		if y > 0.35:
+			var species: String = "shrub_bush" if (_rng.randf() < 0.45) else "grass_patch"
+			flora_sim.spawn_plant(species, Vector3(x, y, z), _rng.randf_range(2.5, 5.5))
+
+	# 1c. Whispering Forest Margin (understory berry shrubs & shade moss)
+	for i: int in range(forest_plants):
+		var x: float = _rng.randf_range(-12.0, 0.0)
+		var z: float = _rng.randf_range(-6.0, 3.5)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 2.5
+		if y > 0.4:
+			flora_sim.spawn_plant("shrub_bush", Vector3(x, y, z), _rng.randf_range(3.5, 6.0))
+
+	# 1d. Island-wide dispersed flora
+	for i: int in range(scattered_plants):
 		var angle: float = _rng.randf() * TAU
-		var dist: float = _rng.randf_range(6.0, 58.0)
+		var dist: float = _rng.randf_range(8.0, 56.0)
 		var x: float = cos(angle) * dist
 		var z: float = sin(angle) * dist
-		var y: float = 0.5
-		if _terrain_height_func.is_valid():
-			y = _terrain_height_func.call(x, z)
-
-		# Check above water level
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 0.5
 		if y > 0.4:
 			var species: String = "shrub_bush" if (_rng.randf() < 0.35) else "grass_patch"
-			var initial_bio: float = _rng.randf_range(2.0, 6.0)
-			flora_sim.spawn_plant(species, Vector3(x, y, z), initial_bio)
+			flora_sim.spawn_plant(species, Vector3(x, y, z), _rng.randf_range(2.0, 5.0))
 
-	# 2. Spawn initial herbivores in meadow/forest zones
-	for i: int in range(herbivore_count):
-		var angle: float = _rng.randf() * TAU
-		var dist: float = _rng.randf_range(8.0, 45.0)
-		var x: float = cos(angle) * dist
-		var z: float = sin(angle) * dist
-		var y: float = 1.0
-		if _terrain_height_func.is_valid():
-			y = _terrain_height_func.call(x, z)
-		if y > 0.4:
-			var initial_energy: float = _rng.randf_range(70.0, 95.0)
-			fauna_sim.spawn_herbivore(Vector3(x, y, z), initial_energy)
+	# 2. Spawn initial herbivores clustered in primary foraging & watering niches
+	var meadow_herbs: int = int(herbivore_count * 0.65)
+	var basin_herbs: int = int(herbivore_count * 0.25)
+	var forest_herbs: int = herbivore_count - (meadow_herbs + basin_herbs)
 
-	# 3. Spawn initial predators near higher elevation
-	for i: int in range(predator_count):
-		var angle: float = _rng.randf() * TAU
-		var dist: float = _rng.randf_range(20.0, 48.0)
-		var x: float = cos(angle) * dist
-		var z: float = sin(angle) * dist
-		var y: float = 2.0
-		if _terrain_height_func.is_valid():
-			y = _terrain_height_func.call(x, z)
+	# 2a. Sunlit Meadow Glade herd (grazing on wildflower meadows)
+	for i: int in range(meadow_herbs):
+		var x: float = _rng.randf_range(4.0, 15.0)
+		var z: float = _rng.randf_range(0.5, 8.5)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 1.5
 		if y > 0.4:
-			fauna_sim.spawn_predator(Vector3(x, y, z), 85.0)
+			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(75.0, 95.0))
+
+	# 2b. Emerald Basin Cove shoreline group (watering hole & creek delta)
+	for i: int in range(basin_herbs):
+		var x: float = _rng.randf_range(12.0, 20.0)
+		var z: float = _rng.randf_range(9.0, 17.0)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 0.6
+		if y > 0.4:
+			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(70.0, 90.0))
+
+	# 2c. Whispering Forest ecotone (sheltered browsing)
+	for i: int in range(forest_herbs):
+		var x: float = _rng.randf_range(-10.0, -1.0)
+		var z: float = _rng.randf_range(-5.0, 2.5)
+		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 2.5
+		if y > 0.4:
+			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(75.0, 92.0))
+
+	# 3. Spawn initial predators in natural predatory vantages & forest perimeter
+	# Predator 1: High North Ridge overlooking the valley and basin
+	var p1_x: float = _rng.randf_range(-18.0, -10.0)
+	var p1_z: float = _rng.randf_range(-18.0, -8.0)
+	var p1_y: float = _terrain_height_func.call(p1_x, p1_z) if _terrain_height_func.is_valid() else 3.5
+	fauna_sim.spawn_predator(Vector3(p1_x, maxf(0.5, p1_y), p1_z), 85.0)
+
+	# Predator 2+: Forest perimeter stalkers
+	for i: int in range(1, predator_count):
+		var px: float = _rng.randf_range(-15.0, -7.0)
+		var pz: float = _rng.randf_range(-4.0, 4.0)
+		var py: float = _terrain_height_func.call(px, pz) if _terrain_height_func.is_valid() else 2.5
+		fauna_sim.spawn_predator(Vector3(px, maxf(0.5, py), pz), 85.0)
 
 	if _event_bus:
 		_event_bus.publish("ecosystem_populated", {
@@ -144,13 +196,20 @@ func _on_ecosystem_tick(_tick_num: int, _sim_time: float) -> void:
 func step_simulation(delta_sim: float) -> void:
 	var start_usec: int = Time.get_ticks_usec()
 
+	# Compute diurnal solar hour for coupled ecological behaviors (120s full day, 09:00 morning offset)
+	var sim_hour: float = 12.0
+	if _world_clock:
+		var sim_time: float = _world_clock.simulation_time + 45.0
+		var day_phase: float = fmod(sim_time / 120.0, 1.0)
+		sim_hour = day_phase * 24.0
+
 	# Step plant growth and environmental decay
 	if flora_sim and _env_grid:
 		flora_sim.step_simulation(delta_sim, _env_grid)
 
-	# Step fauna foraging, metabolism, movement, and predation
+	# Step fauna foraging, metabolism, movement, and predation with diurnal hour
 	if fauna_sim:
-		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func, _weather_system)
+		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func, _weather_system, sim_hour)
 
 	# Compute live genetic telemetry
 	var total_herb_speed: float = 0.0

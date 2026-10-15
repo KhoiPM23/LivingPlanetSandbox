@@ -158,6 +158,10 @@ func _build_ui() -> void:
 	_build_bottom_hint_bar()
 	_build_menu_modal()
 
+	# Start in clean cinematic exploration mode by default
+	_toolbar_panel.visible = false
+	_right_panel.visible = false
+
 # =========================================================================
 # 1. TOP BAR: CLOCK, SIM CONTROLS, QUICK SAVE/LOAD
 # =========================================================================
@@ -542,7 +546,7 @@ func _build_bottom_hint_bar() -> void:
 	_bottom_bar.add_theme_stylebox_override("panel", style)
 
 	var hint: Label = Label.new()
-	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [1-0,=,;] Tools | [Esc] Menu"
+	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [Tab] Tools & Data | [H] Hide All | [Esc] Menu"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.85))
@@ -1138,6 +1142,8 @@ func _on_tool_button_pressed(mode: PlayerToolController.ToolMode) -> void:
 		_tool_controller.set_tool(mode)
 
 func _on_tool_changed(mode: PlayerToolController.ToolMode, _name: String) -> void:
+	if _toolbar_panel:
+		_toolbar_panel.visible = true
 	for m in _tool_buttons.keys():
 		var btn: Button = _tool_buttons[m]
 		if m == mode:
@@ -1187,6 +1193,12 @@ func toggle_hud() -> void:
 	_visible = not _visible
 	_container.visible = _visible
 
+func toggle_side_panels() -> void:
+	var next_vis: bool = not (_toolbar_panel.visible or _right_panel.visible)
+	if _toolbar_panel: _toolbar_panel.visible = next_vis
+	if _right_panel: _right_panel.visible = next_vis
+	show_toast("Panels: " + ("Shown [Tab]" if next_vis else "Hidden (Clean View) [Tab]"), true)
+
 func show_toast(msg: String, is_success: bool = true) -> void:
 	if not _toast_panel or not _toast_label:
 		return
@@ -1206,6 +1218,8 @@ func _format_bar(val: float, max_val: float, length: int = 10) -> String:
 
 func _on_inspection_performed(data: Dictionary) -> void:
 	_inspect_empty.visible = false
+	if _right_panel:
+		_right_panel.visible = true
 	var txt: String = ""
 
 	# Entity Info
@@ -1403,6 +1417,8 @@ func _create_spacer() -> Control:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		match event.keycode:
+			KEY_TAB:
+				toggle_side_panels()
 			KEY_H:
 				toggle_hud()
 			KEY_ESCAPE:
@@ -1470,8 +1486,10 @@ func _on_track_entity_pressed() -> void:
 
 func _on_camera_mode_changed(mode: FreeLookCamera.CameraMode, mode_name: String) -> void:
 	if _cam_mode_btn:
-		if mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
-			_cam_mode_btn.text = "🚶 Walker [V]"
+		if mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
+			_cam_mode_btn.text = "🏃 3rd-Person [V]"
+		elif mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+			_cam_mode_btn.text = "🚶 1st-Person [V]"
 		elif mode == FreeLookCamera.CameraMode.FREE_LOOK:
 			_cam_mode_btn.text = "🎥 Flycam [V]"
 		else:

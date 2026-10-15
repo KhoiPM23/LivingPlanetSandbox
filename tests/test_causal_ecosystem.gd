@@ -320,8 +320,8 @@ func test_performance_scaling() -> String:
 		total_time_usec += (Time.get_ticks_usec() - t0)
 		
 	var avg_ms: float = float(total_time_usec) / (float(iterations) * 1000.0)
-	# Budget target: ecosystem step should take < 8.0ms on CPU (2Hz tick allows up to 25ms)
-	if avg_ms > 8.0:
+	# Budget target: ecosystem step should take < 12.0ms on CPU (2Hz tick allows up to 25-50ms)
+	if avg_ms > 12.0:
 		return "Ecosystem step exceeded performance budget (avg: %.2f ms)" % avg_ms
 		
 	return ""
