@@ -1,0 +1,22 @@
+{
+	"avg_draw_calls": 288.2625,
+	"avg_fps": 23.2768578569579,
+	"avg_frametime_ms": 42.961125,
+	"avg_memory_mb": 110.359546780586,
+	"avg_primitives": 1228162.8375,
+	"camera_mode": "First-Person Walker (default on boot)",
+	"lighting_calibration": {
+		"ambient_light_energy": 0.76,
+		"ambient_sky_contribution": 0.65,
+		"directional_light_color": "Color(1.0, 0.96, 0.90, 1)",
+		"directional_light_energy": 1.35,
+		"fog_depth_begin": 60.0,
+		"fog_depth_end": 300.0,
+		"tonemap_exposure": 0.92
+	},
+	"max_frametime_ms": 562.333,
+	"min_frametime_ms": 18.519,
+	"platform": "Intel Iris Xe Graphics, Windows 11, Godot 4.6.3 Forward+ Vulkan",
+	"stage": "Stage 1 — Hero Visual Recovery",
+	"total_frames_profiled": 80
+}

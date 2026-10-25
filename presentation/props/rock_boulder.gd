@@ -118,10 +118,22 @@ func _build_rock() -> void:
 					0.0,
 					float(((seed_hash / 10) % 20) - 10)
 				)
-				inst.visibility_range_end = 120.0
-				inst.visibility_range_end_margin = 15.0
+				inst.visibility_range_end = 450.0
+				inst.visibility_range_end_margin = 30.0
 				inst.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				add_child(inst)
+
+				# Physical collision body (prevents camera & fauna clipping)
+				var col_body: StaticBody3D = StaticBody3D.new()
+				col_body.name = "RockCollision"
+				col_body.collision_layer = 1
+				var col_shape: CollisionShape3D = CollisionShape3D.new()
+				var sph: SphereShape3D = SphereShape3D.new()
+				sph.radius = 0.75 * s
+				col_shape.shape = sph
+				col_shape.position = Vector3(0.0, sph.radius * 0.7, 0.0)
+				col_body.add_child(col_shape)
+				add_child(col_body)
 				return
 
 		RockArchetype.PROMINENT_CRAG:
@@ -135,10 +147,23 @@ func _build_rock() -> void:
 				inst.material_override = _shared_rock_pbr_mat
 				var s: float = (1.3 + 0.18 * float(seed_hash % 10)) * rock_scale
 				inst.scale = Vector3.ONE * s
-				inst.visibility_range_end = 135.0
-				inst.visibility_range_end_margin = 15.0
+				inst.visibility_range_end = 500.0
+				inst.visibility_range_end_margin = 30.0
 				inst.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				add_child(inst)
+
+				# Physical collision body
+				var col_body: StaticBody3D = StaticBody3D.new()
+				col_body.name = "RockCollision"
+				col_body.collision_layer = 1
+				var col_shape: CollisionShape3D = CollisionShape3D.new()
+				var cyl: CylinderShape3D = CylinderShape3D.new()
+				cyl.radius = 0.85 * s
+				cyl.height = 2.4 * s
+				col_shape.shape = cyl
+				col_shape.position = Vector3(0.0, cyl.height * 0.45, 0.0)
+				col_body.add_child(col_shape)
+				add_child(col_body)
 				return
 
 		RockArchetype.RIVER_STONE:
@@ -158,10 +183,22 @@ func _build_rock() -> void:
 					for child in rock_node.get_children():
 						if child is GeometryInstance3D:
 							child.material_override = _shared_rock_pbr_mat
-							child.visibility_range_end = 115.0
-							child.visibility_range_end_margin = 15.0
+							child.visibility_range_end = 350.0
+							child.visibility_range_end_margin = 25.0
 							child.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 					add_child(rock_node)
+
+					# Physical collision body
+					var col_body: StaticBody3D = StaticBody3D.new()
+					col_body.name = "RockCollision"
+					col_body.collision_layer = 1
+					var col_shape: CollisionShape3D = CollisionShape3D.new()
+					var sph: SphereShape3D = SphereShape3D.new()
+					sph.radius = maxf(0.35, 1.1 * s_var * rock_scale)
+					col_shape.shape = sph
+					col_shape.position = Vector3(0.0, sph.radius * 0.65, 0.0)
+					col_body.add_child(col_shape)
+					add_child(col_body)
 					return
 
 	# Fallback faceted rock instance
@@ -175,3 +212,14 @@ func _build_rock() -> void:
 	inst.mesh = sphere
 	inst.material_override = _shared_rock_pbr_mat
 	add_child(inst)
+
+	var col_body: StaticBody3D = StaticBody3D.new()
+	col_body.name = "RockCollision"
+	col_body.collision_layer = 1
+	var col_shape: CollisionShape3D = CollisionShape3D.new()
+	var sph: SphereShape3D = SphereShape3D.new()
+	sph.radius = 1.0 * rock_scale
+	col_shape.shape = sph
+	col_shape.position = Vector3(0.0, sph.radius * 0.7, 0.0)
+	col_body.add_child(col_shape)
+	add_child(col_body)

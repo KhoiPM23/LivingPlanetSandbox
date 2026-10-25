@@ -18,3 +18,27 @@ Thumbs.db
 build/
 export/
 *.tmp
+
+# Scratch R&D & Test Logs
+scratch/
+scratch_*
+*.log
+regression_output.txt
+test_log.txt
+verify_log.txt
+walker_err.txt
+
+# Sensitive & Untracked NSFW Character Assets (SFW Repository Guarantee)
+presentation/assets/models/*bikini*
+presentation/assets/models/*nude*
+presentation/assets/models/*custom*.png
+presentation/assets/models/*custom*.png.import
+presentation/assets/models/asian_beauty/
+presentation/assets/models/douyin_asian_character*
+reports/bikini_test.txt
+reports/chest_vertices.txt
+reports/bone_details.txt
+reports/all_bones.txt
+reports/char_debug_info.txt
+reports/eye_mats.txt
+reports/visual_cinematic/

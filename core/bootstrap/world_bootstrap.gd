@@ -3,7 +3,7 @@ extends Node
 
 ## Central coordinator initializing and running a Living Planet Sandbox world.
 
-@export var initial_seed: String = "LIVING_PLANET_PRIME"
+@export var initial_seed: Variant = 1337
 @export var simulation_tick_rate: float = 10.0
 @export var auto_start: bool = true
 
@@ -60,7 +60,7 @@ func _on_environment_tick(_tick_num: int, _sim_time: float) -> void:
 	var delta_sim: float = 0.5 * world_clock.time_scale
 	weather_system.update(delta_sim)
 
-	var day_phase: float = fmod((world_clock.simulation_time + 45.0) / 120.0, 1.0)
+	var day_phase: float = world_clock.get_day_phase()
 	environmental_grid.step_simulation(delta_sim, day_phase, weather_system)
 
 func reset_world(new_seed: Variant = null) -> void:

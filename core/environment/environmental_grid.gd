@@ -29,6 +29,9 @@ func get_cell(idx: int) -> Dictionary:
 	return {}
 
 func initialize_grid(height_sampler: Callable, moisture_noise: FastNoiseLite = null) -> void:
+	if _config:
+		_cell_size = _config.island_size / float(grid_size)
+		_half_world = _config.island_size * 0.5
 	_cells.clear()
 	_cells.resize(grid_size * grid_size)
 	
@@ -36,7 +39,9 @@ func initialize_grid(height_sampler: Callable, moisture_noise: FastNoiseLite = n
 		var wz: float = -_half_world + (float(gz) + 0.5) * _cell_size
 		for gx in range(grid_size):
 			var wx: float = -_half_world + (float(gx) + 0.5) * _cell_size
-			var elev: float = height_sampler.call(wx, wz)
+			var elev: float = 1.0
+			if height_sampler.is_valid():
+				elev = height_sampler.call(wx, wz)
 			
 			# Base moisture: simplex noise modulated by distance to water table
 			var noise_val: float = 0.5
@@ -267,6 +272,26 @@ func apply_disaster_shock(center_x: float, center_z: float, radius: float) -> in
 			cell["temperature"] = clampf(cell["temperature"] + heat_delta, -25.0, 50.0)
 			cell["moisture"] = clampf(cell["moisture"] - moisture_drop, 0.05, 1.0)
 			cell["biome"] = BiomeClassifier.classify(cell["temperature"], cell["moisture"], cell["elevation"], _config.water_level)
+			affected_count += 1
+	return affected_count
+
+## Elemental ash enrichment: burning grass/brush deposits potassium-rich charcoal ash into the soil,
+## increasing fertility (+0.45) and marking charred_ash_active for accelerated tender shoot regrowth.
+func apply_ash_enrichment(center_x: float, center_z: float, radius: float = 6.0) -> int:
+	var radius_sq: float = radius * radius
+	var affected_count: int = 0
+	for i in range(_cells.size()):
+		var cell: Dictionary = _cells[i]
+		var dx: float = cell["world_x"] - center_x
+		var dz: float = cell["world_z"] - center_z
+		var dist_sq: float = dx * dx + dz * dz
+		if dist_sq <= radius_sq:
+			var falloff: float = 1.0 - (sqrt(dist_sq) / maxf(radius, 0.001))
+			var fertility_gain: float = 0.45 * (0.6 + 0.4 * falloff)
+			var cur_fert: float = cell.get("fertility", 1.0)
+			cell["fertility"] = clampf(cur_fert + fertility_gain, 0.2, 3.0)
+			cell["charred_ash_active"] = true
+			cell["charred_ash_timer"] = 180.0
 			affected_count += 1
 	return affected_count
 

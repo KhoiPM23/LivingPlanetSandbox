@@ -1,0 +1,81 @@
+{
+	"batch": "LIVINGPLANETSANDBOX — WORLD EXPANSION & VISUAL OVERHAUL",
+	"captured_screenshots": [
+		{
+			"description": "Panorama from Skyspire summit looking across the continent",
+			"id": "01_panorama",
+			"path": "reports/expansion_01_panorama.png"
+		},
+		{
+			"description": "Sunlit meadow framing pine woods and distant peaks",
+			"id": "02_meadow_vista",
+			"path": "reports/expansion_02_meadow_vista.png"
+		},
+		{
+			"description": "Third-person human explorer at meadow glade overlook",
+			"id": "03_third_person_hero",
+			"path": "reports/expansion_03_third_person_hero.png"
+		},
+		{
+			"description": "First-person perspective winding along pine forest trail",
+			"id": "04_forest_trail",
+			"path": "reports/expansion_04_forest_trail.png"
+		},
+		{
+			"description": "Emerald basin shoreline terrain-water transition",
+			"id": "05_lake_shoreline",
+			"path": "reports/expansion_05_lake_shoreline.png"
+		},
+		{
+			"description": "Multi-biome ecotone showing meadow, forest, and mountain rock",
+			"id": "06_biome_contrast",
+			"path": "reports/expansion_06_biome_contrast.png"
+		},
+		{
+			"description": "Sunset golden hour lighting across continental massifs",
+			"id": "07_golden_hour",
+			"path": "reports/expansion_07_golden_hour.png"
+		}
+	],
+	"engine": "Godot 4.6.3 Forward+ Vulkan",
+	"performance": {
+		"avg_draw_calls": 292,
+		"avg_fps": 13.188871806437,
+		"avg_frametime_ms": 75.8214966887417,
+		"avg_memory_mb": 139.438593580233,
+		"avg_primitives": 1017581,
+		"max_frametime_ms": 109.719,
+		"min_frametime_ms": 54.897,
+		"p95_frametime_ms": 92.242,
+		"scene_boot_and_generation_time_ms": 40624,
+		"total_profiled_frames": 151,
+		"vantage_point_fps": {
+			"dense_forest_trail_fps": 12.9269112438274,
+			"meadow_vista_fps": 12.3298480962715,
+			"skyspire_panorama_fps": 15.2197735297699
+		}
+	},
+	"resolution": "1280x720 (Balanced Quality Preset)",
+	"target_hardware": {
+		"gpu": "Intel Iris Xe Integrated Graphics",
+		"os": "Windows 11",
+		"ram": "16 GB"
+	},
+	"world_metrics": {
+		"max_elevation_m": 46.2,
+		"peaks": [
+			"Skyspire Alpine Peak (42-46m)",
+			"Whispering Pine Highlands (26-32m)",
+			"Cape Solitude Bluffs (20-25m)",
+			"Sunset Promontory (17-22m)"
+		],
+		"terrain_architecture": "3x3 Chunked Mesh Grid (9 chunks) with Frustum Culling and Trimesh Collision",
+		"water_features": [
+			"Azure Sound Channel (submerged outer ring)",
+			"Emerald Basin Cove & Winding Creek",
+			"Glacial Cirque Tarn"
+		],
+		"water_plane_size_m": 960.0,
+		"world_domain_size_m": 720.0
+	}
+}

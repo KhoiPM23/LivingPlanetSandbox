@@ -1,0 +1,30 @@
+{
+	"final_acceptance_views": [
+		"final_01_opening_panorama.png",
+		"final_02_dense_forest_interior.png",
+		"final_03_forest_path_depth.png",
+		"final_04_open_biome_meadow.png",
+		"final_05_biome_transition.png",
+		"final_06_lake_water_edge_vista.png",
+		"final_07_distant_overlook.png",
+		"final_08_midday_lighting.png",
+		"final_09_golden_hour_lighting.png",
+		"final_10_night_celestial.png",
+		"final_11_representative_gameplay.png",
+		"final_12_demanding_scene_perf.png"
+	],
+	"performance": {
+		"avg_draw_calls": 275.963302752294,
+		"avg_fps": 17.8460563162596,
+		"avg_frametime_ms": 56.0347889908257,
+		"avg_memory_mb": 141.084476295961,
+		"avg_primitives": 849956.403669725,
+		"max_frametime_ms": 69.062,
+		"min_frametime_ms": 46.452,
+		"p95_frametime_ms": 65.746,
+		"total_steady_frames_profiled": 109
+	},
+	"phase": "Phase 9 Final Polish, Hardware Validation and Honest Handoff",
+	"platform": "Intel Iris Xe Graphics, Windows 11, Godot 4.6.3 Forward+ Vulkan",
+	"resolution": "1280x720 (Balanced Preset)"
+}

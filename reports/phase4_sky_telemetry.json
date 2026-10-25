@@ -1,0 +1,24 @@
+{
+	"performance": {
+		"avg_draw_calls": 311.6625,
+		"avg_fps": 5.29918327662545,
+		"avg_frametime_ms": 188.708325,
+		"avg_memory_mb": 140.293270802498,
+		"avg_primitives": 1234376.55625,
+		"max_frametime_ms": 4565.622,
+		"min_frametime_ms": 52.583,
+		"p95_frametime_ms": 879.51,
+		"total_frames_profiled": 160
+	},
+	"phase": "Phase 4 Sky, Celestial Bodies, Atmosphere & Open-World Immersion",
+	"platform": "Intel Iris Xe Graphics, Windows 11, Godot 4.6.3 Forward+ Vulkan",
+	"resolution": "1280x720 (Balanced Preset)",
+	"sky_system": {
+		"clouds": "Dual-deck animated cumulus + wispy cirrus, weather coverage coupling",
+		"fog": "Single-owner Rayleigh fog, unified diurnal & weather depth begin/end",
+		"moon": "Orbital counter-trajectory, procedural lunar maria/craters, terminator phase angle, earthshine",
+		"scattering": "Rayleigh + Mie gradient shader on 820m celestial dome sphere",
+		"stars": "3D spherical Voronoi starfield (zero zenith distortion), twinkle animation, tilted Milky Way band",
+		"sun": "3D astronomical arc, limb darkening, corona, horizon refraction"
+	}
+}

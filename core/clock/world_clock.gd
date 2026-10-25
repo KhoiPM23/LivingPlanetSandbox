@@ -7,6 +7,11 @@ signal tick(tick_number: int, sim_time: float)
 signal time_scale_changed(new_scale: float)
 signal paused_changed(is_paused: bool)
 
+const DEFAULT_DAY_DURATION: float = 720.0 # 12 real minutes per full simulation day — contract test canonical
+const DEFAULT_START_HOUR: float = 11.5   # 11:30 AM Midday exploration start
+
+var day_duration: float = DEFAULT_DAY_DURATION
+var start_hour: float = DEFAULT_START_HOUR
 var simulation_time: float = 0.0
 var tick_count: int = 0
 var tick_rate: float = 10.0 # 10 simulation ticks per real second
@@ -15,6 +20,69 @@ var time_scale: float = 1.0
 var is_paused: bool = false
 
 var _accumulator: float = 0.0
+
+func get_sim_time() -> float:
+	return simulation_time + (start_hour / 24.0) * day_duration
+
+func get_day_phase() -> float:
+	if day_duration <= 0.0:
+		return 0.0
+	return fmod(get_sim_time() / day_duration, 1.0)
+
+func get_sim_hour() -> float:
+	return get_day_phase() * 24.0
+
+func get_time_of_day() -> float:
+	return get_sim_hour()
+
+func set_time_of_day(target_hour: float) -> void:
+	var desired_phase: float = fposmod(target_hour / 24.0, 1.0)
+	var current_phase: float = get_day_phase()
+	var phase_diff: float = fposmod(desired_phase - current_phase, 1.0)
+	simulation_time += phase_diff * day_duration
+
+func get_day_number() -> int:
+	if day_duration <= 0.0:
+		return 1
+	return int(get_sim_time() / day_duration) + 1
+
+enum Season {
+	SPRING,
+	SUMMER,
+	AUTUMN,
+	WINTER
+}
+
+func get_season() -> Season:
+	var day: int = get_day_number()
+	var idx: int = ((day - 1) / 3) % 4
+	return Season.values()[idx]
+
+func get_season_name() -> String:
+	match get_season():
+		Season.SPRING:
+			return "Spring Bloom"
+		Season.SUMMER:
+			return "High Summer"
+		Season.AUTUMN:
+			return "Golden Autumn"
+		Season.WINTER:
+			return "Frost Winter"
+		_:
+			return "Temperate"
+
+func is_daytime() -> bool:
+	var phase: float = get_day_phase()
+	return phase >= 0.25 and phase < 0.75
+
+func set_sim_hour(hour: float) -> void:
+	var target_h: float = fmod(hour, 24.0)
+	if target_h < 0.0:
+		target_h += 24.0
+	var offset_hours: float = target_h - start_hour
+	if offset_hours < 0.0:
+		offset_hours += 24.0
+	simulation_time = (offset_hours / 24.0) * day_duration
 
 func _init(p_tick_rate: float = 10.0) -> void:
 	set_tick_rate(p_tick_rate)

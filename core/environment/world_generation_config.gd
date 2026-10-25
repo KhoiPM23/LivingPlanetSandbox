@@ -18,7 +18,7 @@ func _init(p_seed: int = 1337) -> void:
 	seed_val = p_seed
 
 func clamp_values() -> void:
-	island_size = clamp(island_size, 40.0, 500.0)
+	island_size = clamp(island_size, 40.0, 1000.0)
 	resolution = clampi(resolution, 32, 256)
 	max_height = clamp(max_height, 5.0, 60.0)
 	water_level = clamp(water_level, -10.0, 10.0)
@@ -30,7 +30,7 @@ func clamp_values() -> void:
 
 func is_valid() -> bool:
 	return (
-		island_size >= 40.0 and island_size <= 500.0 and
+		island_size >= 40.0 and island_size <= 1000.0 and
 		resolution >= 32 and resolution <= 256 and
 		max_height > water_level and
 		roughness > 0.0 and roughness < 1.0 and

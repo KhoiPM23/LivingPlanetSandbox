@@ -14,7 +14,8 @@ enum CameraMode {
 	FOLLOW_ENTITY = 2,
 	TOP_DOWN = 3,
 	FIRST_PERSON_WALKER = 4,
-	THIRD_PERSON_CHARACTER = 5
+	THIRD_PERSON_CHARACTER = 5,
+	CINEMATIC = 6
 }
 
 signal mode_changed(new_mode: CameraMode, mode_name: String)
@@ -107,6 +108,7 @@ const BOOKMARKS: Array[Dictionary] = [
 var _current_bookmark_idx: int = -1
 
 func _ready() -> void:
+	near = 0.05
 	_target_rotation.y = rotation.y
 	_target_rotation.x = rotation.x
 	if has_node(terrain_node_path):
@@ -127,6 +129,9 @@ func get_walker() -> FirstPersonWalker:
 		_ensure_walker()
 	return _walker
 
+func setup_camera(_height_fn: Callable = Callable()) -> void:
+	current_mode = CameraMode.THIRD_PERSON_CHARACTER
+
 func set_input_blocked(blocked: bool) -> void:
 	_input_blocked = blocked
 	if _input_blocked and _mouse_captured:
@@ -144,18 +149,17 @@ func release_mouse() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func look_at_target(target: Vector3) -> void:
-	if is_inside_tree():
-		look_at(target, Vector3.UP)
-		_target_rotation.y = rotation.y
-		_target_rotation.x = rotation.x
-	else:
-		var fwd: Vector3 = (target - position).normalized()
-		if fwd.length_squared() > 0.001:
-			_target_rotation.y = atan2(-fwd.x, -fwd.z)
-			var horiz: float = Vector2(fwd.x, fwd.z).length()
-			_target_rotation.x = atan2(fwd.y, horiz)
-			rotation.y = _target_rotation.y
-			rotation.x = _target_rotation.x
+	var cur_pos: Vector3 = global_position if is_inside_tree() else position
+	var fwd: Vector3 = target - cur_pos
+	if fwd.length_squared() < 0.0001:
+		return
+	fwd = fwd.normalized()
+	var yaw: float = atan2(-fwd.x, -fwd.z)
+	var horiz: float = Vector2(fwd.x, fwd.z).length()
+	var pitch: float = atan2(fwd.y, maxf(horiz, 0.0001))
+	pitch = clampf(pitch, -deg_to_rad(85.0), deg_to_rad(85.0))
+	_target_rotation = Vector2(pitch, yaw)
+	rotation = Vector3(pitch, yaw, 0.0)
 
 
 # =========================================================================
@@ -174,22 +178,45 @@ func set_camera_mode(new_mode: CameraMode, instant: bool = false) -> void:
 
 	if is_character_mode:
 		_ensure_walker()
-		var ground_y: float = 0.0
-		if _terrain_ref:
-			ground_y = _terrain_ref.get_height_at(position.x, position.z)
-		var spawn_pos: Vector3 = Vector3(position.x, ground_y, position.z)
+		if not was_character_mode:
+			var ground_y: float = 0.0
+			if _terrain_ref:
+				ground_y = _terrain_ref.get_height_at(position.x, position.z)
+			var spawn_pos: Vector3 = Vector3(position.x, ground_y, position.z)
+			if _walker:
+				_walker.teleport_to(spawn_pos)
+
 		if _walker:
-			_walker.teleport_to(spawn_pos)
 			_walker.set_perspective(current_mode == CameraMode.THIRD_PERSON_CHARACTER)
 			if current_mode == CameraMode.THIRD_PERSON_CHARACTER:
+				if was_character_mode:
+					_walker._target_cam_yaw = rotation.y
+					_walker._cam_yaw = rotation.y
+					_walker._target_cam_pitch = rotation.x
+					_walker._cam_pitch = rotation.x
 				_walker.update_camera_rotation(0.016)
 				var cam3d: Camera3D = _walker.get_camera()
 				if cam3d:
-					global_transform = cam3d.global_transform
+					if is_inside_tree() and cam3d.is_inside_tree():
+						global_transform = cam3d.global_transform
+					else:
+						transform = cam3d.transform
 			else:
+				# FIRST_PERSON_WALKER: align first-person look angles with third-person camera
+				if was_character_mode:
+					_target_rotation.y = _walker.get_camera_yaw()
+					rotation.y = _walker.get_camera_yaw()
+					_target_rotation.x = _walker.get_camera_pitch()
+					rotation.x = _walker.get_camera_pitch()
 				position = _walker.get_eye_position()
+
+		if current_mode == CameraMode.FIRST_PERSON_WALKER:
+			cull_mask = cull_mask & ~(1 << 1)
+		else:
+			cull_mask = cull_mask | (1 << 1)
+
 		_target_rotation.y = rotation.y
-		_target_rotation.x = clampf(rotation.x, -deg_to_rad(60.0), deg_to_rad(60.0))
+		_target_rotation.x = clampf(rotation.x, -deg_to_rad(75.0), deg_to_rad(75.0))
 		rotation.x = _target_rotation.x
 		_follow_node = null
 		_follow_callable = Callable()
@@ -199,6 +226,9 @@ func set_camera_mode(new_mode: CameraMode, instant: bool = false) -> void:
 	elif current_mode == CameraMode.TOP_DOWN:
 		var target_pos: Vector3 = Vector3(position.x, top_down_altitude, position.z)
 		var target_rot: Vector2 = Vector2(-deg_to_rad(85.0), 0.0)
+		cull_mask = cull_mask | (1 << 1) | 1
+		if _walker:
+			_walker._update_mesh_visibility_for_perspective(true)
 		if instant:
 			position = target_pos
 			_target_rotation = target_rot
@@ -212,6 +242,17 @@ func set_camera_mode(new_mode: CameraMode, instant: bool = false) -> void:
 		_follow_node = null
 		_follow_callable = Callable()
 		_follow_entity_id = -1
+		cull_mask = cull_mask | (1 << 1) | 1
+		if _walker:
+			_walker._update_mesh_visibility_for_perspective(true)
+	elif current_mode == CameraMode.CINEMATIC:
+		_follow_node = null
+		_follow_callable = Callable()
+		_follow_entity_id = -1
+		cull_mask = cull_mask | (1 << 1) | 1
+		if _walker:
+			_walker._update_mesh_visibility_for_perspective(true)
+		release_mouse()
 
 	mode_changed.emit(current_mode, get_mode_name(current_mode))
 
@@ -225,6 +266,14 @@ func cycle_camera_mode() -> void:
 	else:
 		set_camera_mode(CameraMode.FREE_LOOK)
 
+func toggle_walker_perspective() -> void:
+	if current_mode == CameraMode.THIRD_PERSON_CHARACTER:
+		set_camera_mode(CameraMode.FIRST_PERSON_WALKER)
+	elif current_mode == CameraMode.FIRST_PERSON_WALKER:
+		set_camera_mode(CameraMode.THIRD_PERSON_CHARACTER)
+	else:
+		set_camera_mode(CameraMode.THIRD_PERSON_CHARACTER)
+
 func get_mode_name(mode: CameraMode) -> String:
 	match mode:
 		CameraMode.FREE_LOOK: return "Free Flight"
@@ -233,6 +282,7 @@ func get_mode_name(mode: CameraMode) -> String:
 		CameraMode.TOP_DOWN: return "Tactical Map"
 		CameraMode.FIRST_PERSON_WALKER: return "First-Person Walker"
 		CameraMode.THIRD_PERSON_CHARACTER: return "Third-Person Character"
+		CameraMode.CINEMATIC: return "Cinematic Vista"
 		_: return "Unknown"
 
 # =========================================================================
@@ -384,11 +434,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			if current_mode == CameraMode.FREE_LOOK:
 				_toggle_mouse_capture(not _mouse_captured)
 			elif current_mode == CameraMode.FIRST_PERSON_WALKER or current_mode == CameraMode.THIRD_PERSON_CHARACTER:
-				if not _mouse_captured:
+				if _walker and _walker.get_torch_system().is_torch_held and _mouse_captured:
+					_place_torch_at_crosshair()
+				elif not _mouse_captured:
 					capture_mouse()
 		elif mb.button_index == MOUSE_BUTTON_LEFT and mb.is_pressed():
-			if (current_mode == CameraMode.FIRST_PERSON_WALKER or current_mode == CameraMode.THIRD_PERSON_CHARACTER) and not _mouse_captured:
-				capture_mouse()
+			if current_mode == CameraMode.FIRST_PERSON_WALKER or current_mode == CameraMode.THIRD_PERSON_CHARACTER:
+				if _walker and _walker.get_torch_system().is_torch_held and _mouse_captured:
+					_ignite_ground_at_crosshair()
+				elif not _mouse_captured:
+					capture_mouse()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.is_pressed():
 			_handle_zoom_in()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.is_pressed():
@@ -405,6 +460,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			cycle_camera_mode()
 		elif event.keycode == KEY_B:
 			cycle_bookmark()
+		elif event.keycode == KEY_L:
+			if _walker:
+				var active: bool = _walker.toggle_torch()
+				var hud: Node = _find_hud()
+				if hud and hud.has_method("show_toast"):
+					hud.show_toast("🔥 Wilderness Torch: %s [L]" % ("LIT" if active else "OFF"), true)
 	elif event is InputEventMouseMotion and _mouse_captured:
 		var motion: InputEventMouseMotion = event as InputEventMouseMotion
 		_handle_mouse_look(motion.relative)
@@ -507,19 +568,7 @@ func _process_walker(delta: float) -> void:
 	if _walker == null:
 		return
 
-	if current_mode == CameraMode.THIRD_PERSON_CHARACTER:
-		_walker.update_camera_rotation(delta)
-	else:
-		rotation.y = lerp_angle(rotation.y, _target_rotation.y, smooth_factor * delta)
-		rotation.x = lerp_angle(rotation.x, _target_rotation.x, smooth_factor * delta)
-
 	if _input_blocked:
-		if current_mode == CameraMode.THIRD_PERSON_CHARACTER:
-			var cam3d: Camera3D = _walker.get_camera()
-			if cam3d:
-				global_transform = cam3d.global_transform
-		else:
-			position = _walker.get_eye_position()
 		return
 
 	var wish_dir: Vector3 = Vector3.ZERO
@@ -542,15 +591,9 @@ func _process_walker(delta: float) -> void:
 
 	var is_sprinting: bool = Input.is_key_pressed(KEY_SHIFT)
 	var want_jump: bool = Input.is_key_pressed(KEY_SPACE)
+	var want_crouch: bool = Input.is_key_pressed(KEY_C) or Input.is_key_pressed(KEY_CTRL)
 
-	_walker.move_character(delta, wish_dir, is_sprinting, want_jump)
-
-	if current_mode == CameraMode.THIRD_PERSON_CHARACTER:
-		var cam3d: Camera3D = _walker.get_camera()
-		if cam3d:
-			global_transform = cam3d.global_transform
-	else:
-		position = _walker.get_eye_position()
+	_walker.move_character(delta, wish_dir, is_sprinting, want_jump, want_crouch)
 
 func _process(delta: float) -> void:
 	if not _terrain_ref and has_node(terrain_node_path):
@@ -561,10 +604,15 @@ func _process(delta: float) -> void:
 		_enforce_boundaries(delta)
 		return
 
+	if current_mode == CameraMode.CINEMATIC:
+		return
+
 	if current_mode == CameraMode.FIRST_PERSON_WALKER:
 		rotation.y = lerp_angle(rotation.y, _target_rotation.y, smooth_factor * delta)
 		rotation.x = lerp_angle(rotation.x, _target_rotation.x, smooth_factor * delta)
 		if _walker:
+			_walker._cam_yaw = rotation.y
+			_walker._cam_pitch = rotation.x
 			position = _walker.get_eye_position()
 		return
 	elif current_mode == CameraMode.THIRD_PERSON_CHARACTER:
@@ -617,7 +665,7 @@ func _process_free_look(delta: float) -> void:
 	var bwd: bool = Input.is_action_pressed("move_backward") or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)
 	var lft: bool = Input.is_action_pressed("move_left") or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
 	var rgt: bool = Input.is_action_pressed("move_right") or Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
-	var up: bool = Input.is_action_pressed("move_up") or Input.is_key_pressed(KEY_E)
+	var up: bool = Input.is_action_pressed("move_up") or Input.is_key_pressed(KEY_E) or Input.is_key_pressed(KEY_SPACE)
 	var down: bool = Input.is_action_pressed("move_down") or Input.is_key_pressed(KEY_Q) or Input.is_key_pressed(KEY_C)
 
 	if fwd: input_dir -= transform.basis.z
@@ -703,14 +751,55 @@ func _process_top_down(delta: float) -> void:
 # =========================================================================
 func _enforce_boundaries(delta: float) -> void:
 	var min_clearance: float = 0.85
+	var half_bound: float = 76.0
+	var max_ceil: float = 68.0
+
 	if _terrain_ref:
 		var terrain_h: float = _terrain_ref.get_height_at(position.x, position.z)
 		min_clearance = maxf(terrain_h + 0.9, 0.85)
+		if _terrain_ref.island_size > 200.0:
+			half_bound = _terrain_ref.island_size * 0.48
+			max_ceil = 120.0
 
 	if position.y < min_clearance:
 		position.y = lerpf(position.y, min_clearance, clampf(delta * 14.0, 0.0, 1.0))
 
 	# Bounded exploration ceilings and island horizontal limits
-	position.y = clampf(position.y, min_clearance, 68.0)
-	position.x = clampf(position.x, -76.0, 76.0)
-	position.z = clampf(position.z, -76.0, 76.0)
+	position.y = clampf(position.y, min_clearance, max_ceil)
+	position.x = clampf(position.x, -half_bound, half_bound)
+	position.z = clampf(position.z, -half_bound, half_bound)
+
+func _find_hud() -> Node:
+	if get_tree() and get_tree().current_scene:
+		return get_tree().current_scene.find_child("WorldHUD", true, false)
+	return null
+
+func _place_torch_at_crosshair() -> void:
+	if not _walker:
+		return
+	var space = get_world_3d().direct_space_state
+	var from: Vector3 = global_position
+	var to: Vector3 = from + (-global_transform.basis.z) * 7.5
+	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 1
+	var hit: Dictionary = space.intersect_ray(query)
+	if hit and hit.has("position"):
+		_walker.get_torch_system().place_torch_at(hit["position"], hit.get("normal", Vector3.UP))
+		var hud = _find_hud()
+		if hud and hud.has_method("show_toast"):
+			hud.show_toast("🔥 Placed Ground Torch", true)
+
+func _ignite_ground_at_crosshair() -> void:
+	if not _walker:
+		return
+	var space = get_world_3d().direct_space_state
+	var from: Vector3 = global_position
+	var to: Vector3 = from + (-global_transform.basis.z) * 5.0
+	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 1
+	var hit: Dictionary = space.intersect_ray(query)
+	if hit and hit.has("position"):
+		_walker.get_torch_system().ignite_ground_at(hit["position"], 3.2)
+		var hud = _find_hud()
+		if hud and hud.has_method("show_toast"):
+			hud.show_toast("🌱 Ash Enriched Soil: Regrowth +45%", true)

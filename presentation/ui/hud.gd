@@ -5,6 +5,11 @@ extends CanvasLayer
 ## Displays real-time simulation metrics, live population chart, inspector, event log, tool palette, and toasts.
 
 const ExperimentHistory = preload("res://core/ecosystem/experiment_history.gd")
+const IslandMapCanvas = preload("res://presentation/ui/island_map_canvas.gd")
+const FieldJournalModal = preload("res://presentation/ui/field_journal_modal.gd")
+const ExpeditionSummaryModal = preload("res://presentation/ui/expedition_summary_modal.gd")
+const ExpeditionManager = preload("res://core/gameplay/expedition_manager.gd")
+const FieldCameraOverlay = preload("res://presentation/camera/field_camera_overlay.gd")
 
 @export var bootstrap_path: NodePath = ".."
 @export var camera_path: NodePath
@@ -65,6 +70,11 @@ var _exp_refresh_timer: float = 0.0
 # Bottom Bar
 var _bottom_bar: PanelContainer
 
+# Bottom Ergonomic Tool Hotbar (Block 35)
+var _hotbar_panel: PanelContainer
+var _hotbar_buttons: Dictionary = {} # ToolMode -> Button
+var _tool_context_label: Label
+
 # Menu & Settings Modal
 var _seed_lbl: Label
 var _menu_modal: PanelContainer
@@ -88,10 +98,37 @@ var _bookmark_btn: Button
 var _track_entity_btn: Button
 var _last_inspected_id: int = -1
 var _last_inspected_pos: Vector3 = Vector3.ZERO
+var _storytelling: Node = null
 
 # Weather & Wind Telemetry
 var _weather_btn: Button
 var _weather_telemetry_label: Label
+
+# Audio Volume Settings
+var _master_vol_label: Label
+var _ambience_vol_label: Label
+
+# Island Map & Naturalist Field Journal Modal
+var _map_btn: Button
+var _map_modal: PanelContainer
+var _map_canvas: IslandMapCanvas
+var _map_info_label: Label
+var _map_pois_vbox: VBoxContainer
+var _map_vitals_label: Label
+
+# Field Journal & Summary Modals
+signal return_to_title_requested()
+var _journal_modal: FieldJournalModal = null
+var _summary_modal: ExpeditionSummaryModal = null
+var _expedition_manager: ExpeditionManager = null
+
+# Field Camera & Active Commissions
+var _camera_overlay: FieldCameraOverlay = null
+var _commissions_card: PanelContainer = null
+var _commissions_vbox: VBoxContainer = null
+var _commissions_timer: float = 0.0
+var _scanner_timer: float = 0.0
+var _original_fov: float = 75.0
 
 
 func _ready() -> void:
@@ -111,6 +148,7 @@ func setup_controllers(bootstrap: WorldBootstrap, tool_controller: PlayerToolCon
 	_tool_controller = tool_controller
 	_camera = camera
 	_connect_signals()
+	show_welcome_banner()
 
 func _connect_signals() -> void:
 	if _tool_controller:
@@ -156,7 +194,12 @@ func _build_ui() -> void:
 	_build_right_observability_panel()
 	_build_toast_banner()
 	_build_bottom_hint_bar()
+	_build_bottom_hotbar()
 	_build_menu_modal()
+	_build_map_modal()
+	_build_journal_and_summary_modals()
+	_build_commissions_card()
+	_build_camera_overlay()
 
 	# Start in clean cinematic exploration mode by default
 	_toolbar_panel.visible = false
@@ -217,12 +260,68 @@ func _build_top_bar() -> void:
 	_bookmark_btn.pressed.connect(_on_bookmark_btn_pressed)
 	hbox.add_child(_bookmark_btn)
 
+	# Cartographic Island Map & Field Journal
+	_map_btn = Button.new()
+	_map_btn.text = "🗺️ Map [M]"
+	_map_btn.custom_minimum_size = Vector2(85, 24)
+	_map_btn.pressed.connect(toggle_map_modal)
+	hbox.add_child(_map_btn)
+
+	var journal_btn: Button = Button.new()
+	journal_btn.text = "📖 Journal [J]"
+	journal_btn.custom_minimum_size = Vector2(90, 24)
+	journal_btn.pressed.connect(func(): toggle_journal_modal(0))
+	hbox.add_child(journal_btn)
+
+	var cam_overlay_btn: Button = Button.new()
+	cam_overlay_btn.text = "📷 Camera [Z]"
+	cam_overlay_btn.custom_minimum_size = Vector2(90, 24)
+	cam_overlay_btn.pressed.connect(toggle_field_camera)
+	hbox.add_child(cam_overlay_btn)
+
 	# Weather State & Cycle Button
 	_weather_btn = Button.new()
 	_weather_btn.text = "☀️ Clear [Y]"
-	_weather_btn.custom_minimum_size = Vector2(105, 24)
+	_weather_btn.custom_minimum_size = Vector2(95, 24)
 	_weather_btn.pressed.connect(_on_cycle_weather_pressed)
 	hbox.add_child(_weather_btn)
+
+	# Dedicated Weather & Lighting Quick-Bar (☀️ Nắng, 🌅 Hoàng Hôn, 🌧️ Mưa, 🌙 Đêm, 🔄 Auto)
+	var w_quick: HBoxContainer = HBoxContainer.new()
+	w_quick.name = "WeatherQuickBar"
+	w_quick.add_theme_constant_override("separation", 2)
+
+	var btn_clear: Button = Button.new()
+	btn_clear.text = "☀️ Nắng"
+	btn_clear.custom_minimum_size = Vector2(58, 24)
+	btn_clear.pressed.connect(func(): _set_weather_preset("clear"))
+	w_quick.add_child(btn_clear)
+
+	var btn_sunset: Button = Button.new()
+	btn_sunset.text = "🌅 Hoàng Hôn"
+	btn_sunset.custom_minimum_size = Vector2(88, 24)
+	btn_sunset.pressed.connect(func(): _set_weather_preset("sunset"))
+	w_quick.add_child(btn_sunset)
+
+	var btn_rain: Button = Button.new()
+	btn_rain.text = "🌧️ Mưa"
+	btn_rain.custom_minimum_size = Vector2(58, 24)
+	btn_rain.pressed.connect(func(): _set_weather_preset("rain"))
+	w_quick.add_child(btn_rain)
+
+	var btn_night: Button = Button.new()
+	btn_night.text = "🌙 Đêm"
+	btn_night.custom_minimum_size = Vector2(58, 24)
+	btn_night.pressed.connect(func(): _set_weather_preset("night"))
+	w_quick.add_child(btn_night)
+
+	var btn_auto: Button = Button.new()
+	btn_auto.text = "🔄 Auto"
+	btn_auto.custom_minimum_size = Vector2(62, 24)
+	btn_auto.pressed.connect(func(): _set_weather_preset("auto"))
+	w_quick.add_child(btn_auto)
+
+	hbox.add_child(w_quick)
 
 	# Wind Vector & Ground Wetness Telemetry
 	_weather_telemetry_label = Label.new()
@@ -243,7 +342,7 @@ func _build_top_bar() -> void:
 
 	# Pause / Resume Button
 	_pause_btn = Button.new()
-	_pause_btn.text = "Pause [Space]"
+	_pause_btn.text = "Pause [P]"
 	_pause_btn.custom_minimum_size = Vector2(85, 24)
 	_pause_btn.pressed.connect(_on_pause_pressed)
 	hbox.add_child(_pause_btn)
@@ -334,7 +433,8 @@ func _build_left_toolbar() -> void:
 		{"mode": PlayerToolController.ToolMode.SOIL_FERTILIZE, "label": "[0] Fertilize"},
 		{"mode": PlayerToolController.ToolMode.DISASTER_SHOCK, "label": "[-] Disaster"},
 		{"mode": PlayerToolController.ToolMode.MUTATE_POPULATION, "label": "[=] Mutate"},
-		{"mode": PlayerToolController.ToolMode.CLIMATE_PULSE, "label": "[;] Deluge Pulse"}
+		{"mode": PlayerToolController.ToolMode.CLIMATE_PULSE, "label": "[;] Deluge Pulse"},
+		{"mode": PlayerToolController.ToolMode.TORCH, "label": "[8] 🔥 Torch/Camp"}
 	]
 
 	for t in tools_def:
@@ -509,10 +609,10 @@ func _build_toast_banner() -> void:
 	_toast_panel.anchor_top = 0.0
 	_toast_panel.anchor_right = 0.5
 	_toast_panel.anchor_bottom = 0.0
-	_toast_panel.offset_left = -220.0
+	_toast_panel.offset_left = -280.0
 	_toast_panel.offset_top = 56.0
-	_toast_panel.offset_right = 220.0
-	_toast_panel.offset_bottom = 88.0
+	_toast_panel.offset_right = 280.0
+	_toast_panel.offset_bottom = 98.0
 	_toast_panel.visible = false
 
 	var style: StyleBoxFlat = _create_glass_style(Color(0.08, 0.16, 0.24, 0.95), Color(0.35, 0.75, 1.0, 0.8), 6)
@@ -522,6 +622,7 @@ func _build_toast_banner() -> void:
 	_toast_label.text = "Ready"
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_toast_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	_toast_label.add_theme_font_size_override("font_size", 11)
 	_toast_panel.add_child(_toast_label)
@@ -546,7 +647,7 @@ func _build_bottom_hint_bar() -> void:
 	_bottom_bar.add_theme_stylebox_override("panel", style)
 
 	var hint: Label = Label.new()
-	hint.text = "[W/A/S/D] Move | [V] Flycam ↔ Walker | [Space] Jump / Pause | [Shift] Sprint | [B] POI | [Tab] Tools & Data | [H] Hide All | [Esc] Menu"
+	hint.text = "[W/A/S/D] Move | [Space] Jump | [C] Crouch | [Shift] Sprint | [V] Cam | [M] Map | [T] Time | [Y] Weather | [G] Preset | [P] Pause | [H] HUD"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95, 0.85))
@@ -555,6 +656,67 @@ func _build_bottom_hint_bar() -> void:
 
 
 	_container.add_child(_bottom_bar)
+
+# =========================================================================
+# 5b. BOTTOM ERGONOMIC TOOL HOTBAR & CONTEXT ACTION HUD (Block 35)
+# =========================================================================
+func _build_bottom_hotbar() -> void:
+	_hotbar_panel = PanelContainer.new()
+	_hotbar_panel.anchor_left = 0.5
+	_hotbar_panel.anchor_top = 1.0
+	_hotbar_panel.anchor_right = 0.5
+	_hotbar_panel.anchor_bottom = 1.0
+	_hotbar_panel.offset_left = -410.0
+	_hotbar_panel.offset_top = -98.0
+	_hotbar_panel.offset_right = 410.0
+	_hotbar_panel.offset_bottom = -42.0
+
+	var panel_style: StyleBoxFlat = _create_glass_style(Color(0.04, 0.07, 0.12, 0.90), Color(0.25, 0.45, 0.70, 0.60), 6)
+	_hotbar_panel.add_theme_stylebox_override("panel", panel_style)
+
+	var outer_vbox: VBoxContainer = VBoxContainer.new()
+	outer_vbox.add_theme_constant_override("separation", 2)
+
+	# Contextual tool action hint label
+	_tool_context_label = Label.new()
+	_tool_context_label.text = "[LMB] Sample Soil & Inspect Living Fauna/Flora Entity Details"
+	_tool_context_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tool_context_label.add_theme_font_size_override("font_size", 10)
+	_tool_context_label.add_theme_color_override("font_color", Color(0.40, 0.90, 1.0, 0.95))
+	outer_vbox.add_child(_tool_context_label)
+
+	var hbox: HBoxContainer = HBoxContainer.new()
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", 4)
+
+	var hotbar_tools: Array[Dictionary] = [
+		{"mode": PlayerToolController.ToolMode.INSPECT, "badge": "1", "icon": "🔍", "name": "Inspect"},
+		{"mode": PlayerToolController.ToolMode.MOISTURE_ADD, "badge": "2", "icon": "💧", "name": "+Moist"},
+		{"mode": PlayerToolController.ToolMode.MOISTURE_SUB, "badge": "3", "icon": "🏜️", "name": "-Moist"},
+		{"mode": PlayerToolController.ToolMode.SPAWN_PLANT, "badge": "4", "icon": "🌿", "name": "+Plant"},
+		{"mode": PlayerToolController.ToolMode.SPAWN_HERBIVORE, "badge": "5", "icon": "🦌", "name": "+Deer"},
+		{"mode": PlayerToolController.ToolMode.SPAWN_PREDATOR, "badge": "6", "icon": "🐺", "name": "+Stalker"},
+		{"mode": PlayerToolController.ToolMode.DELETE_ENTITY, "badge": "7", "icon": "❌", "name": "Delete"},
+		{"mode": PlayerToolController.ToolMode.TORCH, "badge": "8", "icon": "🔥", "name": "Torch/Camp"},
+		{"mode": PlayerToolController.ToolMode.SHELTER, "badge": "9", "icon": "⛺", "name": "Shelter"},
+		{"mode": PlayerToolController.ToolMode.FORAGE, "badge": "0", "icon": "🍇", "name": "Forage"}
+	]
+
+	for item in hotbar_tools:
+		var mode: PlayerToolController.ToolMode = item["mode"]
+		var btn: Button = Button.new()
+		btn.text = "[%s] %s %s" % [item["badge"], item["icon"], item["name"]]
+		btn.custom_minimum_size = Vector2(74, 26)
+		btn.add_theme_font_size_override("font_size", 9)
+		var btn_style: StyleBoxFlat = _create_glass_style(Color(0.08, 0.12, 0.18, 0.85), Color(0.30, 0.50, 0.70, 0.5), 4)
+		btn.add_theme_stylebox_override("normal", btn_style)
+		btn.pressed.connect(_on_tool_button_pressed.bind(mode))
+		_hotbar_buttons[mode] = btn
+		hbox.add_child(btn)
+
+	outer_vbox.add_child(hbox)
+	_hotbar_panel.add_child(outer_vbox)
+	_container.add_child(_hotbar_panel)
 
 # =========================================================================
 # 6. MAIN MENU & SETTINGS MODAL
@@ -600,13 +762,40 @@ func _build_menu_modal() -> void:
 	tab_sim.add_theme_constant_override("separation", 8)
 
 	var resume_btn: Button = Button.new()
-	resume_btn.text = "Resume Simulation [Esc]"
+	resume_btn.text = "Resume Expedition [Esc]"
 	resume_btn.custom_minimum_size = Vector2(0, 32)
 	resume_btn.pressed.connect(toggle_menu_modal)
 	tab_sim.add_child(resume_btn)
 
+	var open_journal_btn: Button = Button.new()
+	open_journal_btn.text = "📖 Open Field Journal & Codex [J]"
+	open_journal_btn.custom_minimum_size = Vector2(0, 30)
+	open_journal_btn.pressed.connect(func():
+		toggle_menu_modal()
+		toggle_journal_modal()
+	)
+	tab_sim.add_child(open_journal_btn)
+
+	var open_map_btn: Button = Button.new()
+	open_map_btn.text = "🗺️ Open Island Cartographic Map [M]"
+	open_map_btn.custom_minimum_size = Vector2(0, 30)
+	open_map_btn.pressed.connect(func():
+		toggle_menu_modal()
+		toggle_map_modal()
+	)
+	tab_sim.add_child(open_map_btn)
+
+	var open_summary_btn: Button = Button.new()
+	open_summary_btn.text = "🏆 View Expedition Recognition Summary"
+	open_summary_btn.custom_minimum_size = Vector2(0, 30)
+	open_summary_btn.pressed.connect(func():
+		toggle_menu_modal()
+		open_expedition_summary()
+	)
+	tab_sim.add_child(open_summary_btn)
+
 	var reroll_btn: Button = Button.new()
-	reroll_btn.text = "Re-roll World (Generate New Seed)"
+	reroll_btn.text = "Restore Canonical World (Reset Map #1337)"
 	reroll_btn.custom_minimum_size = Vector2(0, 30)
 	reroll_btn.pressed.connect(_on_reroll_world_pressed)
 	tab_sim.add_child(reroll_btn)
@@ -634,6 +823,15 @@ func _build_menu_modal() -> void:
 		toggle_menu_modal()
 	)
 	tab_sim.add_child(modal_reset_btn)
+
+	var return_title_btn: Button = Button.new()
+	return_title_btn.text = "🏠 Return to Main Menu / Title Screen"
+	return_title_btn.custom_minimum_size = Vector2(0, 30)
+	return_title_btn.pressed.connect(func():
+		toggle_menu_modal()
+		return_to_title_requested.emit()
+	)
+	tab_sim.add_child(return_title_btn)
 
 	var quit_btn: Button = Button.new()
 	quit_btn.text = "Quit to Desktop"
@@ -709,6 +907,59 @@ func _build_menu_modal() -> void:
 	_fog_btn.pressed.connect(_on_toggle_fog)
 	tab_settings.add_child(_fog_btn)
 
+	# --- Audio Volume Settings ---
+	var audio_hdr: Label = Label.new()
+	audio_hdr.text = "AUDIO VOLUME LEVELS"
+	audio_hdr.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
+	audio_hdr.add_theme_font_size_override("font_size", 11)
+	tab_settings.add_child(audio_hdr)
+
+	# Master Volume
+	var master_vbox: VBoxContainer = VBoxContainer.new()
+	var master_hdr: HBoxContainer = HBoxContainer.new()
+	var master_title: Label = Label.new()
+	master_title.text = "Master Audio Volume:"
+	master_title.add_theme_font_size_override("font_size", 11)
+	master_hdr.add_child(master_title)
+	master_hdr.add_child(_create_spacer())
+	_master_vol_label = Label.new()
+	_master_vol_label.text = "85%"
+	_master_vol_label.add_theme_font_size_override("font_size", 11)
+	master_hdr.add_child(_master_vol_label)
+	master_vbox.add_child(master_hdr)
+
+	var master_slider: HSlider = HSlider.new()
+	master_slider.min_value = 0.0
+	master_slider.max_value = 1.0
+	master_slider.step = 0.05
+	master_slider.value = 0.85
+	master_slider.value_changed.connect(_on_master_volume_changed)
+	master_vbox.add_child(master_slider)
+	tab_settings.add_child(master_vbox)
+
+	# Nature Ambience Volume
+	var amb_vbox: VBoxContainer = VBoxContainer.new()
+	var amb_hdr: HBoxContainer = HBoxContainer.new()
+	var amb_title: Label = Label.new()
+	amb_title.text = "Nature Ambience & Wildlife:"
+	amb_title.add_theme_font_size_override("font_size", 11)
+	amb_hdr.add_child(amb_title)
+	amb_hdr.add_child(_create_spacer())
+	_ambience_vol_label = Label.new()
+	_ambience_vol_label.text = "85%"
+	_ambience_vol_label.add_theme_font_size_override("font_size", 11)
+	amb_hdr.add_child(_ambience_vol_label)
+	amb_vbox.add_child(amb_hdr)
+
+	var amb_slider: HSlider = HSlider.new()
+	amb_slider.min_value = 0.0
+	amb_slider.max_value = 1.0
+	amb_slider.step = 0.05
+	amb_slider.value = 0.85
+	amb_slider.value_changed.connect(_on_ambience_volume_changed)
+	amb_vbox.add_child(amb_slider)
+	tab_settings.add_child(amb_vbox)
+
 	var sens_vbox: VBoxContainer = VBoxContainer.new()
 	var sens_hdr: HBoxContainer = HBoxContainer.new()
 	var sens_title: Label = Label.new()
@@ -767,27 +1018,31 @@ func _build_menu_modal() -> void:
 	help_lbl.add_theme_font_size_override("font_size", 10)
 	help_lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
 	help_lbl.text = """[EXPLORATION MODES & CAMERA]
-• [V]: Toggle Dual-Mode: Flycam (6-DOF Flight) ↔ First-Person Walker
-• [W/A/S/D]: Move (Walk / Strafe in Walker; Free Flight / Pan in Flycam)
-• [Space]: Jump in First-Person Walker | Pause/Resume simulation in Flycam
-• [Shift]: Sprint boost (faster walking / flight)
-• [Right Mouse]: Toggle free-look mouse camera in Flycam mode
-• [Mouse Look]: Direct mouse look in First-Person Walker (auto-captured)
-• [Esc]: Release mouse & open Pause / Settings Menu (Resuming re-captures mouse)
-• [E / Q]: Ascend / Descend elevation in Flycam mode
-• [Scroll Wheel]: Adjust flight speed (Flycam) or zoom distance (Orbit)
+• [V]: Cycle Perspective: Third-Person Character → First-Person Walker → Flycam
+• [W/A/S/D]: Move (Walk / Strafe in Character modes; Free Flight / Pan in Flycam)
+• [Space]: Jump in Character modes | Ascend in Flycam
+• [C / Ctrl]: Crouch & Stealth in Character modes (reduces wildlife alarm range) | Descend in Flycam
+• [Shift]: Sprint boost in Character modes | Fast Flight in Flycam
+• [Mouse Look]: Direct mouse look (Auto-captured in Walker & Third-Person; Right-click in Flycam)
+• [Scroll Wheel]: Camera zoom (Third-Person) | Flight speed (Flycam) | Zoom distance (Orbit)
 • [B]: Cycle scenic Points of Interest (POI bookmarks)
 • [F]: Track inspected entity with orbit camera
+• [Esc]: Release mouse & open Pause / Settings Menu (Resuming re-captures mouse)
+
+[SIMULATION & ENVIRONMENT]
+• [P]: Pause / Resume simulation clock
+• [T]: Advance simulation time (+2 hours)
+• [Y]: Cycle manual weather override (Clear, Overcast, Rain, Drought, Auto)
+• [G]: Cycle graphics quality preset (Low, Balanced, High)
+• [1x, 2x, 5x]: Time dilation speed
+• [F5]: QuickSave experiment state | [F9]: QuickLoad experiment state
+• [F1]: Open this Help Guide | [Esc]: Toggle Pause & Settings Menu
+• [H]: Hide all HUD overlays for scenic observation
 
 [EXPERIMENT TOOLS]
 • [1 - 7, 8, 9, 0, -]: Select experiment tools (Inspect, +Moisture, -Moisture, Plant, Deer, Stalker, Delete, Heatwave, Frost, Fertilize, Disaster)
 • [[ / ]]: Decrease / Increase tool brush radius
 • [Left Mouse]: Apply selected tool at crosshair/cursor position
-• [Space / P]: Pause / Resume simulation clock
-• [1x, 2x, 5x]: Time dilation speed
-• [F5]: QuickSave experiment state | [F9]: QuickLoad experiment state
-• [F1]: Open this Help Guide | [Esc]: Toggle Pause & Settings Menu
-• [H]: Hide all HUD overlays for scenic observation
 
 [ECOLOGICAL DYNAMICS]
 • Water & Sunshine: Moisture and sunlight drive photosynthesis and plant biomass growth.
@@ -819,7 +1074,7 @@ func toggle_menu_modal() -> void:
 		if _camera and _camera is FreeLookCamera:
 			var cam: FreeLookCamera = _camera as FreeLookCamera
 			cam.set_input_blocked(false)
-			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
+			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
 				cam.capture_mouse()
 		if _tool_controller:
 			_tool_controller.set_input_blocked(false)
@@ -932,29 +1187,650 @@ func _on_flight_slider_changed(val: float) -> void:
 	if _flight_label:
 		_flight_label.text = "%.1f m/s" % val
 
+func _on_master_volume_changed(val: float) -> void:
+	if _master_vol_label:
+		_master_vol_label.text = "%d%%" % int(val * 100.0)
+	var bus_idx: int = AudioServer.get_bus_index("Master")
+	if bus_idx >= 0:
+		if val <= 0.01:
+			AudioServer.set_bus_mute(bus_idx, true)
+		else:
+			AudioServer.set_bus_mute(bus_idx, false)
+			AudioServer.set_bus_volume_db(bus_idx, linear_to_db(val))
+
+func _on_ambience_volume_changed(val: float) -> void:
+	if _ambience_vol_label:
+		_ambience_vol_label.text = "%d%%" % int(val * 100.0)
+	var root_node: Node = get_tree().root if (is_inside_tree() and get_tree()) else null
+	var main_node: Node = root_node.find_child("Main", true, false) if root_node else null
+	if main_node and main_node.has_node("SpatialAudioDirector"):
+		var audio_dir: SpatialAudioDirector = main_node.get_node("SpatialAudioDirector") as SpatialAudioDirector
+		if audio_dir.has_method("set_ambience_volume_scale"):
+			audio_dir.call("set_ambience_volume_scale", val)
+
+func _build_map_modal() -> void:
+	_map_modal = PanelContainer.new()
+	_map_modal.anchor_left = 0.5
+	_map_modal.anchor_top = 0.5
+	_map_modal.anchor_right = 0.5
+	_map_modal.anchor_bottom = 0.5
+	_map_modal.offset_left = -380
+	_map_modal.offset_top = -260
+	_map_modal.offset_right = 380
+	_map_modal.offset_bottom = 260
+	_map_modal.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_map_modal.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_map_modal.custom_minimum_size = Vector2(760, 520)
+	_map_modal.visible = false
+
+	var style: StyleBoxFlat = _create_glass_style(Color(0.05, 0.08, 0.14, 0.96), Color(0.28, 0.65, 0.95, 0.85), 8)
+	_map_modal.add_theme_stylebox_override("panel", style)
+
+	var root_vbox: VBoxContainer = VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 10)
+
+	# Header
+	var header_hbox: HBoxContainer = HBoxContainer.new()
+	var title_lbl: Label = Label.new()
+	title_lbl.text = "🗺️ LIVING PLANET — CARTOGRAPHIC EXPEDITION MAP & FIELD JOURNAL"
+	title_lbl.add_theme_color_override("font_color", Color(0.4, 0.85, 1.0))
+	title_lbl.add_theme_font_size_override("font_size", 12)
+	header_hbox.add_child(title_lbl)
+
+	header_hbox.add_child(_create_spacer())
+
+	var close_btn: Button = Button.new()
+	close_btn.text = "  ✕  "
+	close_btn.pressed.connect(toggle_map_modal)
+	header_hbox.add_child(close_btn)
+	root_vbox.add_child(header_hbox)
+
+	# Main Body: Split into Left (Map Canvas) and Right (Field Guide & POIs)
+	var body_hbox: HBoxContainer = HBoxContainer.new()
+	body_hbox.add_theme_constant_override("separation", 14)
+	body_hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	# Left Column: Map Canvas + Coordinates Readout
+	var map_col: VBoxContainer = VBoxContainer.new()
+	map_col.custom_minimum_size = Vector2(390, 440)
+	map_col.add_theme_constant_override("separation", 6)
+
+	_map_canvas = IslandMapCanvas.new()
+	_map_canvas.custom_minimum_size = Vector2(390, 390)
+	_map_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_col.add_child(_map_canvas)
+
+	_map_info_label = Label.new()
+	_map_info_label.text = "📍 Pos: (0.0, 0.0) | Heading: N 000° | Biome: Central Glade"
+	_map_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_map_info_label.add_theme_color_override("font_color", Color(0.35, 0.90, 0.80))
+	_map_info_label.add_theme_font_size_override("font_size", 10)
+	map_col.add_child(_map_info_label)
+
+	body_hbox.add_child(map_col)
+
+	# Right Column: Naturalist Field Guide & POI Checklist
+	var journal_col: VBoxContainer = VBoxContainer.new()
+	journal_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	journal_col.add_theme_constant_override("separation", 8)
+
+	var journal_tabs: TabContainer = TabContainer.new()
+	journal_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	journal_tabs.add_theme_font_size_override("font_size", 11)
+
+	# Tab A: Landmark Discoveries
+	var tab_landmarks: VBoxContainer = VBoxContainer.new()
+	tab_landmarks.name = "Landmarks"
+	tab_landmarks.add_theme_constant_override("separation", 6)
+
+	_map_vitals_label = Label.new()
+	_map_vitals_label.text = "Exploration Progress: 0 / 5 Discovered"
+	_map_vitals_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))
+	_map_vitals_label.add_theme_font_size_override("font_size", 11)
+	tab_landmarks.add_child(_map_vitals_label)
+
+	var poi_scroll: ScrollContainer = ScrollContainer.new()
+	poi_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_map_pois_vbox = VBoxContainer.new()
+	_map_pois_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_pois_vbox.add_theme_constant_override("separation", 6)
+	poi_scroll.add_child(_map_pois_vbox)
+	tab_landmarks.add_child(poi_scroll)
+
+	journal_tabs.add_child(tab_landmarks)
+
+	# Tab B: Wildlife & Flora Field Guide
+	var tab_codex: VBoxContainer = VBoxContainer.new()
+	tab_codex.name = "Field Guide"
+	tab_codex.add_theme_constant_override("separation", 6)
+
+	var codex_scroll: ScrollContainer = ScrollContainer.new()
+	codex_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var codex_lbl: Label = Label.new()
+	codex_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	codex_lbl.add_theme_font_size_override("font_size", 10)
+	codex_lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
+	codex_lbl.text = """[INDIGENOUS FAUNA]
+🦌 Red Deer & Stag (Cervus elaphus):
+  • Gentle herbivores populating the Sunlit Meadow Plains and forest glades.
+  • Gather at Emerald Cove shoreline to drink during dawn (06:00) and dusk (18:00).
+  • Sensitive to noise: sprinting nearby triggers herd panic and frantic alarm calls. Crouch [C] to stalk peacefully.
+
+🐺 Timber Wolf (Canis lupus):
+  • Solitary apex stalker inhabiting the Whispering Deep Forest.
+  • Stalks deer from the pine shadows. Relies on short ambush sprints.
+  • Enters satiation rest after successful hunts, leaving herds in peace.
+
+[INDIGENOUS BOTANY]
+🌲 Scots Pine (Pinus sylvestris):
+  • High-canopy evergreens (10m–15m) forming dense contiguous stands.
+  • Boughs sway with weather wind gusts; needle bed enriches understory soil.
+
+🌸 Wild Lilac & Meadow Grasses:
+  • Flowering shrubs and dense multi-tier grass carpet the Eastern Plains.
+  • Primary food source for herbivores; vitality responds to soil moisture and sunlight."""
+
+	codex_scroll.add_child(codex_lbl)
+	tab_codex.add_child(codex_scroll)
+	journal_tabs.add_child(tab_codex)
+
+	# Tab C: Biomes Overview
+	var tab_biomes: VBoxContainer = VBoxContainer.new()
+	tab_biomes.name = "Biomes"
+	tab_biomes.add_theme_constant_override("separation", 6)
+
+	var biome_scroll: ScrollContainer = ScrollContainer.new()
+	biome_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var biome_lbl: Label = Label.new()
+	biome_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	biome_lbl.add_theme_font_size_override("font_size", 10)
+	biome_lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
+	biome_lbl.text = """[REGIONAL CONTINENTAL BIOMES]
+1. 🌲 Whispering Deep Forest (West & SW):
+   Contiguous canopy of 1,400 Scots pines, shaded understory, fallen logs, mossy boulders, and wolf hunting grounds.
+
+2. 🌾 Sunlit Meadow Plains (East & SE):
+   Vast undulating grassland with vibrant wildflower drifts, high visibility, and active deer herds.
+
+3. 🏔️ Skyspire Alpine Range (Northwest):
+   Granite crags and rocky ridges culminating in Skyspire Peak (43m elevation).
+
+4. 🪵 Pine Highlands (Northeast):
+   Elevated plateau with weathered pines and ancient stone cairns.
+
+5. 🛶 Emerald Cove (Central Basin):
+   Sheltered freshwater lake basin connecting the stream to the outer ocean."""
+
+	biome_scroll.add_child(biome_lbl)
+	tab_biomes.add_child(biome_scroll)
+	journal_tabs.add_child(tab_biomes)
+
+	journal_col.add_child(journal_tabs)
+	body_hbox.add_child(journal_col)
+	root_vbox.add_child(body_hbox)
+
+	_map_modal.add_child(root_vbox)
+	_container.add_child(_map_modal)
+
+func toggle_map_modal() -> void:
+	if not _map_modal:
+		return
+	_map_modal.visible = not _map_modal.visible
+	if _map_modal.visible:
+		if _journal_modal and _journal_modal.visible:
+			_journal_modal.visible = false
+		if _summary_modal and _summary_modal.visible:
+			_summary_modal.visible = false
+		_update_map_ui()
+		if _camera and _camera is FreeLookCamera:
+			var cam: FreeLookCamera = _camera as FreeLookCamera
+			cam.set_input_blocked(true)
+			cam.release_mouse()
+		if _tool_controller:
+			_tool_controller.set_input_blocked(true)
+	else:
+		if _camera and _camera is FreeLookCamera:
+			var cam: FreeLookCamera = _camera as FreeLookCamera
+			cam.set_input_blocked(false)
+			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
+				cam.capture_mouse()
+		if _tool_controller:
+			_tool_controller.set_input_blocked(false)
+
+func _build_journal_and_summary_modals() -> void:
+	_journal_modal = FieldJournalModal.new()
+	_journal_modal.name = "FieldJournalModal"
+	_journal_modal.closed.connect(_on_journal_closed)
+	_journal_modal.milestone_summary_requested.connect(func():
+		_journal_modal.visible = false
+		open_expedition_summary()
+	)
+	_container.add_child(_journal_modal)
+
+	_summary_modal = ExpeditionSummaryModal.new()
+	_summary_modal.name = "ExpeditionSummaryModal"
+	_summary_modal.continue_requested.connect(_on_summary_closed)
+	_summary_modal.journal_requested.connect(func():
+		_summary_modal.visible = false
+		toggle_journal_modal(0)
+	)
+	_summary_modal.main_menu_requested.connect(func():
+		_summary_modal.visible = false
+		return_to_title_requested.emit()
+	)
+	_container.add_child(_summary_modal)
+
+func _build_commissions_card() -> void:
+	_commissions_card = PanelContainer.new()
+	_commissions_card.anchor_left = 0.0
+	_commissions_card.anchor_top = 0.0
+	_commissions_card.anchor_right = 0.0
+	_commissions_card.anchor_bottom = 0.0
+	_commissions_card.offset_left = 16.0
+	_commissions_card.offset_top = 222.0
+	_commissions_card.offset_right = 265.0
+	_commissions_card.offset_bottom = 350.0
+
+	var style: StyleBoxFlat = _create_glass_style(Color(0.04, 0.08, 0.14, 0.88), Color(0.25, 0.50, 0.75, 0.55), 6)
+	_commissions_card.add_theme_stylebox_override("panel", style)
+
+	_commissions_vbox = VBoxContainer.new()
+	_commissions_vbox.add_theme_constant_override("separation", 3)
+
+	var title_lbl: Label = Label.new()
+	title_lbl.text = "📋 Active Commissions [C]"
+	title_lbl.add_theme_font_size_override("font_size", 11)
+	title_lbl.add_theme_color_override("font_color", Color(0.95, 0.85, 0.35))
+	_commissions_vbox.add_child(title_lbl)
+
+	_commissions_card.add_child(_commissions_vbox)
+	_container.add_child(_commissions_card)
+
+func _build_camera_overlay() -> void:
+	_camera_overlay = FieldCameraOverlay.new()
+	_camera_overlay.name = "FieldCameraOverlay"
+	_camera_overlay.photo_captured.connect(_on_photo_captured)
+	_camera_overlay.camera_toggled.connect(_on_camera_overlay_toggled)
+	add_child(_camera_overlay)
+
+func set_expedition_manager(manager: ExpeditionManager) -> void:
+	_expedition_manager = manager
+	if _journal_modal:
+		_journal_modal.setup(manager)
+	if _summary_modal:
+		_summary_modal.setup(manager)
+	if _camera_overlay:
+		_camera_overlay.setup(manager, _camera)
+	_update_commissions_ui()
+
+func toggle_field_camera() -> void:
+	if not _camera_overlay:
+		return
+	_camera_overlay.toggle_camera_mode()
+
+func toggle_commissions_card() -> void:
+	if not _commissions_card:
+		return
+	_commissions_card.visible = not _commissions_card.visible
+	show_toast("Commissions: " + ("Shown [O]" if _commissions_card.visible else "Collapsed [O]"), true)
+
+func _on_camera_overlay_toggled(active: bool) -> void:
+	if _camera:
+		if active:
+			_original_fov = _camera.fov
+			_camera.fov = clampf(_original_fov / _camera_overlay.zoom_level, 10.0, 75.0)
+		else:
+			_camera.fov = _original_fov
+	show_toast("Field Camera: " + ("Engaged [Z / RMB]" if active else "Holstered [Z]"), true)
+
+func _on_photo_captured(photo_data: Dictionary) -> void:
+	var subject: String = photo_data.get("subject", "Landscape")
+	var rating: int = photo_data.get("quality_rating", 3)
+	var score: int = photo_data.get("quality_score", 50)
+	var stars: String = ""
+	for i in range(rating): stars += "★"
+	show_toast("📸 Photo Captured: %s (%s, %d pts)" % [subject, stars, score], true)
+	_update_commissions_ui()
+
+func _update_commissions_ui() -> void:
+	if not _commissions_vbox or not _expedition_manager:
+		return
+
+	while _commissions_vbox.get_child_count() > 1:
+		var ch: Node = _commissions_vbox.get_child(1)
+		_commissions_vbox.remove_child(ch)
+		ch.queue_free()
+
+	var quests: Array[Dictionary] = _expedition_manager.get_active_quests()
+	if quests.is_empty():
+		var empty_lbl: Label = Label.new()
+		empty_lbl.text = "All contracts completed!"
+		empty_lbl.add_theme_font_size_override("font_size", 9)
+		empty_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 0.6))
+		_commissions_vbox.add_child(empty_lbl)
+		return
+
+	for q: Dictionary in quests:
+		var is_done: bool = q.get("completed", false)
+		var q_title: String = q.get("title", "Expedition Quest")
+		var cur: int = q.get("progress", 0)
+		var target: int = q.get("target", 1)
+
+		var row: HBoxContainer = HBoxContainer.new()
+		var icon_lbl: Label = Label.new()
+		icon_lbl.text = "✅" if is_done else "🔹"
+		row.add_child(icon_lbl)
+
+		var title_lbl: Label = Label.new()
+		title_lbl.text = q_title
+		title_lbl.add_theme_font_size_override("font_size", 9)
+		var col: Color = Color(0.45, 0.95, 0.6) if is_done else Color(0.85, 0.9, 0.98)
+		title_lbl.add_theme_color_override("font_color", col)
+		row.add_child(title_lbl)
+
+		row.add_child(_create_spacer())
+
+		var prog_lbl: Label = Label.new()
+		prog_lbl.text = "DONE" if is_done else "%d/%d" % [cur, target]
+		prog_lbl.add_theme_font_size_override("font_size", 9)
+		prog_lbl.add_theme_color_override("font_color", Color(0.5, 0.85, 1.0) if not is_done else Color(0.45, 0.95, 0.6))
+		row.add_child(prog_lbl)
+
+		_commissions_vbox.add_child(row)
+
+func _update_camera_scanner() -> void:
+	if not _camera_overlay or not _camera_overlay.is_active:
+		return
+
+	var cam_pos: Vector3 = Vector3.ZERO
+	var cam_fwd: Vector3 = Vector3.FORWARD
+	if _camera:
+		cam_pos = _camera.global_position if _camera.is_inside_tree() else _camera.position
+		cam_fwd = -_camera.global_transform.basis.z
+
+	var best_target_name: String = "Open Wilderness"
+	var best_target_type: String = "LANDSCAPE"
+	var best_dist: float = 45.0
+	var is_stealth: bool = false
+	var min_dist: float = 999.0
+
+	# 1. Check Fauna Simulation
+	if _bootstrap and _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.fauna_sim:
+		var sim: FaunaSimulation = _bootstrap.ecosystem_coordinator.fauna_sim
+		for h in sim._herbivores.values():
+			var h_pos: Vector3 = h.position
+			var diff: Vector3 = h_pos - cam_pos
+			var d: float = diff.length()
+			if d < 75.0:
+				var dir: Vector3 = diff.normalized()
+				var dot: float = cam_fwd.dot(dir)
+				if dot > 0.88 and d < min_dist:
+					min_dist = d
+					best_target_name = "Red Deer"
+					best_target_type = "FAUNA"
+					best_dist = d
+					is_stealth = (h.state != FaunaSimulation.HerbivoreState.FLEEING and h.state != FaunaSimulation.HerbivoreState.ALERT)
+
+		for p in sim._predators.values():
+			var p_pos: Vector3 = p.position
+			var diff: Vector3 = p_pos - cam_pos
+			var d: float = diff.length()
+			if d < 85.0:
+				var dir: Vector3 = diff.normalized()
+				var dot: float = cam_fwd.dot(dir)
+				if dot > 0.88 and d < min_dist:
+					min_dist = d
+					best_target_name = "Gray Wolf"
+					best_target_type = "FAUNA"
+					best_dist = d
+					is_stealth = (p.state != FaunaSimulation.PredatorState.HUNTING and p.state != FaunaSimulation.PredatorState.ALERT)
+
+	# 2. Check Environmental Landmarks if no fauna locked
+	if best_target_type == "LANDSCAPE":
+		if not _storytelling:
+			var root_node: Node = get_tree().root if (is_inside_tree() and get_tree()) else null
+			var main_node: Node = root_node.find_child("Main", true, false) if root_node else null
+			if main_node and main_node.has_node("EnvironmentalStorytelling"):
+				_storytelling = main_node.get_node("EnvironmentalStorytelling")
+		if _storytelling and _storytelling.has_method("get_all_pois"):
+			var pois: Array[Dictionary] = _storytelling.call("get_all_pois")
+			for poi in pois:
+				var poi_pos: Vector3 = poi.get("position", Vector3.ZERO)
+				var diff: Vector3 = poi_pos - cam_pos
+				var d: float = diff.length()
+				if d < 140.0:
+					var dir: Vector3 = diff.normalized()
+					var dot: float = cam_fwd.dot(dir)
+					if dot > 0.82 and d < min_dist:
+						min_dist = d
+						best_target_name = poi.get("title", "Historic Landmark")
+						best_target_type = "LANDMARK"
+						best_dist = d
+						is_stealth = false
+
+	# 3. Fallback Biome / Elevation Name
+	if best_target_type == "LANDSCAPE":
+		if cam_pos.y >= 50.0:
+			best_target_name = "Skyspire Alpine Peaks"
+		elif cam_pos.x < -20.0 and cam_pos.z > -20.0:
+			best_target_name = "Whispering Pine Forest"
+		elif cam_pos.x > 0.0 and cam_pos.z > 0.0:
+			best_target_name = "Emerald Basin Plains"
+		else:
+			best_target_name = "Wild Glade Valley"
+		best_dist = 45.0
+
+	_camera_overlay.update_target_scanner(best_target_name, best_target_type, best_dist, is_stealth)
+
+	if _camera_overlay.is_acoustic_mode:
+		var bearing_deg: float = fposmod(rad_to_deg(atan2(cam_fwd.x, cam_fwd.z)), 360.0)
+		var freq: float = 185.0
+		var db: float = 52.0
+		if best_target_type == "FAUNA":
+			if best_target_name == "Red Deer":
+				freq = 182.0
+				db = clampf(76.0 - best_dist * 0.45, 42.0, 78.0)
+			elif best_target_name == "Gray Wolf":
+				freq = 425.0
+				db = clampf(80.0 - best_dist * 0.35, 45.0, 84.0)
+		elif best_target_type == "LANDMARK":
+			freq = 120.0
+			db = 48.0
+		else:
+			freq = 85.0
+			db = 42.0
+		_camera_overlay.update_acoustic_telemetry(bearing_deg, db, freq, best_target_name)
+
+func toggle_journal_modal(tab_idx: int = 0) -> void:
+	if not _journal_modal:
+		return
+	if _journal_modal.visible:
+		_journal_modal.hide_journal()
+		_on_journal_closed()
+	else:
+		if _map_modal and _map_modal.visible:
+			_map_modal.visible = false
+		if _menu_modal and _menu_modal.visible:
+			_menu_modal.visible = false
+		if _summary_modal and _summary_modal.visible:
+			_summary_modal.visible = false
+		_journal_modal.show_journal(tab_idx)
+		if _camera and _camera is FreeLookCamera:
+			var cam: FreeLookCamera = _camera as FreeLookCamera
+			cam.set_input_blocked(true)
+			cam.release_mouse()
+		if _tool_controller:
+			_tool_controller.set_input_blocked(true)
+
+func _on_journal_closed() -> void:
+	if _camera and _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		cam.set_input_blocked(false)
+		if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
+			cam.capture_mouse()
+	if _tool_controller:
+		_tool_controller.set_input_blocked(false)
+
+func open_expedition_summary() -> void:
+	if not _summary_modal:
+		return
+	if _journal_modal and _journal_modal.visible:
+		_journal_modal.visible = false
+	if _map_modal and _map_modal.visible:
+		_map_modal.visible = false
+	if _menu_modal and _menu_modal.visible:
+		_menu_modal.visible = false
+	_summary_modal.show_summary()
+	if _camera and _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		cam.set_input_blocked(true)
+		cam.release_mouse()
+	if _tool_controller:
+		_tool_controller.set_input_blocked(true)
+
+func _on_summary_closed() -> void:
+	if _camera and _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		cam.set_input_blocked(false)
+		if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER:
+			cam.capture_mouse()
+	if _tool_controller:
+		_tool_controller.set_input_blocked(false)
+
+func _update_map_ui() -> void:
+	if not _map_modal or not _map_modal.visible:
+		return
+
+	var p_pos: Vector3 = Vector3(7.5, 3.8, 3.5)
+	var p_heading: float = 0.0
+	var biome_name: String = "Central Glade"
+
+	if _camera is FreeLookCamera:
+		var cam: FreeLookCamera = _camera as FreeLookCamera
+		p_heading = cam.get_compass_heading_degrees()
+		if (cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER) and cam.get_walker():
+			var walker = cam.get_walker()
+			p_pos = walker.global_position if walker.is_inside_tree() else walker.position
+		else:
+			p_pos = cam.global_position if cam.is_inside_tree() else cam.position
+
+	if p_pos.x < -20.0 and p_pos.z > -20.0:
+		biome_name = "Whispering Deep Forest"
+	elif p_pos.x > 0.0 and p_pos.z > 0.0:
+		biome_name = "Sunlit Meadow Plains"
+	elif p_pos.x < 0.0 and p_pos.z < 0.0:
+		biome_name = "Skyspire Alpine Range"
+	elif p_pos.x >= 0.0 and p_pos.z < 0.0:
+		biome_name = "Pine Highlands"
+
+	if _map_info_label:
+		_map_info_label.text = "📍 Pos: (%.1f, %.1f) | Heading: %03.0f° | %s" % [p_pos.x, p_pos.z, p_heading, biome_name]
+
+	var poi_list: Array[Dictionary] = []
+	if not _storytelling:
+		var root_node: Node = get_tree().root if (is_inside_tree() and get_tree()) else null
+		var main_node: Node = root_node.find_child("Main", true, false) if root_node else null
+		if main_node and main_node.has_node("EnvironmentalStorytelling"):
+			_storytelling = main_node.get_node("EnvironmentalStorytelling")
+	if _storytelling and _storytelling.has_method("get_all_pois"):
+		poi_list = _storytelling.call("get_all_pois")
+
+	var herbivore_positions: Array = []
+	var predator_positions: Array = []
+	if _bootstrap and _bootstrap.ecosystem_coordinator and _bootstrap.ecosystem_coordinator.fauna_sim:
+		var sim: FaunaSimulation = _bootstrap.ecosystem_coordinator.fauna_sim
+		for h in sim._herbivores.values():
+			herbivore_positions.append(h.position)
+		for p in sim._predators.values():
+			predator_positions.append(p.position)
+
+	if _map_canvas:
+		_map_canvas.update_player(p_pos, p_heading)
+		_map_canvas.update_pois(poi_list)
+		_map_canvas.update_wildlife_telemetry(herbivore_positions, predator_positions)
+
+	if _map_pois_vbox:
+		for ch in _map_pois_vbox.get_children():
+			ch.queue_free()
+
+		var disc_cnt: int = 0
+		for p in poi_list:
+			var is_disc: bool = p.get("discovered", false)
+			if is_disc: disc_cnt += 1
+
+			var panel: PanelContainer = PanelContainer.new()
+			var p_bg: Color = Color(0.08, 0.14, 0.20, 0.90) if is_disc else Color(0.05, 0.07, 0.10, 0.70)
+			var p_border: Color = Color(0.95, 0.80, 0.25, 0.8) if is_disc else Color(0.25, 0.35, 0.45, 0.4)
+			panel.add_theme_stylebox_override("panel", _create_glass_style(p_bg, p_border, 4))
+
+			var v: VBoxContainer = VBoxContainer.new()
+			v.add_theme_constant_override("separation", 2)
+
+			var p_hdr: HBoxContainer = HBoxContainer.new()
+			var icon_lbl: Label = Label.new()
+			icon_lbl.text = "⭐" if is_disc else "❓"
+			p_hdr.add_child(icon_lbl)
+
+			var name_lbl: Label = Label.new()
+			name_lbl.text = p.get("title", "Unknown Landmark") if is_disc else "Undiscovered Landmark"
+			name_lbl.add_theme_font_size_override("font_size", 10)
+			var n_col: Color = Color(1.0, 0.88, 0.35) if is_disc else Color(0.60, 0.70, 0.80)
+			name_lbl.add_theme_color_override("font_color", n_col)
+			p_hdr.add_child(name_lbl)
+
+			p_hdr.add_child(_create_spacer())
+
+			var dist_lbl: Label = Label.new()
+			var d_val: float = p_pos.distance_to(p.get("position", Vector3.ZERO))
+			dist_lbl.text = "%.0fm" % d_val
+			dist_lbl.add_theme_font_size_override("font_size", 9)
+			dist_lbl.add_theme_color_override("font_color", Color(0.50, 0.85, 1.0))
+			p_hdr.add_child(dist_lbl)
+
+			v.add_child(p_hdr)
+
+			if is_disc:
+				var desc_lbl: Label = Label.new()
+				desc_lbl.text = p.get("body", "")
+				desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+				desc_lbl.add_theme_font_size_override("font_size", 9)
+				desc_lbl.add_theme_color_override("font_color", Color(0.78, 0.88, 0.95))
+				v.add_child(desc_lbl)
+
+			panel.add_child(v)
+			_map_pois_vbox.add_child(panel)
+
+		if _map_vitals_label:
+			_map_vitals_label.text = "Exploration Progress: %d / %d Landmarks Discovered" % [disc_cnt, poi_list.size()]
+
+
 func _on_reroll_world_pressed() -> void:
 	if not _bootstrap:
 		return
-	var new_seed: int = randi() % 89999999 + 10000000
-	_bootstrap.world_seed.set_seed(new_seed)
+	var canonical_seed: int = 1337
+	_bootstrap.world_seed.set_seed(canonical_seed)
 	_bootstrap.reset_world()
 
 	var main_node: Node = get_tree().root.find_child("Main", true, false)
 	if main_node and main_node.has_node("IslandTerrain"):
 		var terrain: IslandTerrain = main_node.get_node("IslandTerrain") as IslandTerrain
-		terrain.generate_island(_bootstrap.world_config if _bootstrap.world_config else new_seed, _bootstrap.environmental_grid)
+		terrain.generate_island(_bootstrap.world_config if _bootstrap.world_config else canonical_seed, _bootstrap.environmental_grid)
 		if main_node.has_node("VegetationScatter"):
 			var scatter: VegetationScatter = main_node.get_node("VegetationScatter") as VegetationScatter
-			scatter.scatter(terrain, new_seed, _bootstrap.entity_registry, _bootstrap.environmental_grid, _bootstrap.world_config)
+			scatter.scatter(terrain, canonical_seed, _bootstrap.entity_registry, _bootstrap.environmental_grid, _bootstrap.world_config)
 
 	if _bootstrap.ecosystem_coordinator:
 		_bootstrap.ecosystem_coordinator.populate_initial_ecosystem(55, 14, 2)
 
 	if _seed_lbl:
-		_seed_lbl.text = "[Seed: %d]" % new_seed
+		_seed_lbl.text = "[Canonical Seed: %d]" % canonical_seed
 
-	show_toast("Re-rolled procedural world with new seed: %d" % new_seed, true)
+	show_toast("Restored world to canonical master layout (Seed #1337)", true)
 	toggle_menu_modal()
+
+func set_displayed_seed(new_seed: Variant) -> void:
+	if _seed_lbl:
+		_seed_lbl.text = "[Seed: %s]" % str(new_seed)
 
 # =========================================================================
 # UI PROCESS LOOP
@@ -969,17 +1845,14 @@ func _process(delta: float) -> void:
 		if _toast_timer <= 0.0:
 			_toast_panel.visible = false
 
-	# Update Time representation
+	# Update Time representation from authoritative WorldClock
 	var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null
 	if clock:
-		var day_duration: float = 120.0
-		var start_hour: float = 9.0
-		var sim_time: float = clock.simulation_time + (start_hour / 24.0) * day_duration
-		var day_num: int = int(sim_time / day_duration) + 1
-		var day_phase: float = fmod(sim_time / day_duration, 1.0)
-		var total_hours: float = day_phase * 24.0
+		var day_num: int = clock.get_day_number()
+		var total_hours: float = clock.get_sim_hour()
 		var hours: int = int(total_hours)
 		var minutes: int = int((total_hours - float(hours)) * 60.0)
+		var day_phase: float = clock.get_day_phase()
 
 		var phase_name: String = "Midnight"
 		if day_phase >= 0.20 and day_phase < 0.35: phase_name = "Dawn"
@@ -987,8 +1860,11 @@ func _process(delta: float) -> void:
 		elif day_phase >= 0.70 and day_phase < 0.85: phase_name = "Dusk"
 		elif day_phase >= 0.85 or day_phase < 0.20: phase_name = "Night"
 
-		_time_label.text = "Day %d -- %02d:%02d (%s)" % [day_num, hours, minutes, phase_name]
-		_pause_btn.text = "Resume [Space]" if clock.is_paused else "Pause [Space]"
+		var season_tag: String = ""
+		if clock.has_method("get_season_name"):
+			season_tag = " [%s]" % clock.call("get_season_name")
+		_time_label.text = "Day %d%s -- %02d:%02d (%s)" % [day_num, season_tag, hours, minutes, phase_name]
+		_pause_btn.text = "Resume [P]" if clock.is_paused else "Pause [P]"
 
 	# Update Telemetry & Chart
 	var coord: EcosystemCoordinator = _bootstrap.ecosystem_coordinator if _bootstrap else null
@@ -1026,7 +1902,21 @@ func _process(delta: float) -> void:
 	if _camera is FreeLookCamera:
 		var cam: FreeLookCamera = _camera as FreeLookCamera
 		if _compass_label:
-			_compass_label.text = "🧭 %s %03.0f°" % [cam.get_compass_cardinal(), cam.get_compass_heading_degrees()]
+			var heading_str: String = "🧭 %s %03.0f°" % [cam.get_compass_cardinal(), cam.get_compass_heading_degrees()]
+			if not _storytelling:
+				var root_node: Node = get_tree().root if get_tree() else null
+				var main_node: Node = root_node.find_child("Main", true, false) if root_node else null
+				if main_node and main_node.has_node("EnvironmentalStorytelling"):
+					_storytelling = main_node.get_node("EnvironmentalStorytelling")
+			if _storytelling and _storytelling.has_method("get_nearest_poi"):
+				var p_pos: Vector3 = cam.global_position
+				if (cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER or cam.current_mode == FreeLookCamera.CameraMode.THIRD_PERSON_CHARACTER) and cam.get_walker():
+					var walker = cam.get_walker()
+					p_pos = walker.global_position if walker.is_inside_tree() else walker.position
+				var nearest: Dictionary = _storytelling.call("get_nearest_poi", p_pos)
+				if not nearest.is_empty():
+					heading_str += " • %s [%.0fm]" % [nearest.get("name", "POI"), nearest.get("distance", 0.0)]
+			_compass_label.text = heading_str
 		if _cam_mode_btn:
 			if cam.current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
 				_cam_mode_btn.text = "🚶 Walker [V]"
@@ -1037,7 +1927,8 @@ func _process(delta: float) -> void:
 
 	# Update Weather & Wind Telemetry
 	if weather and _weather_btn and _weather_telemetry_label:
-		_weather_btn.text = "%s %s [Y]" % [WeatherSystem.get_state_icon(weather.current_state), WeatherSystem.get_state_name(weather.current_state)]
+		var mode_tag: String = "[M]" if weather.manual_override else "[Auto]"
+		_weather_btn.text = "%s %s %s [Y]" % [WeatherSystem.get_state_icon(weather.current_state), WeatherSystem.get_state_name(weather.current_state), mode_tag]
 		var eff_wind: float = weather.get_effective_wind_speed()
 		var cardinal: String = weather.get_wind_cardinal()
 		var wet_pct: int = 0
@@ -1053,6 +1944,23 @@ func _process(delta: float) -> void:
 	if _exp_refresh_timer >= 1.0:
 		_exp_refresh_timer = 0.0
 		_update_experiment_tab_ui()
+
+	# Update Island Map real-time tracking if open
+	if _map_modal and _map_modal.visible:
+		_update_map_ui()
+
+	# Update Active Commissions card periodically (0.5s throttle)
+	_commissions_timer += delta
+	if _commissions_timer >= 0.5:
+		_commissions_timer = 0.0
+		_update_commissions_ui()
+
+	# Update Camera Viewfinder Target Scanner
+	if _camera_overlay and _camera_overlay.is_active:
+		_scanner_timer += delta
+		if _scanner_timer >= 0.1:
+			_scanner_timer = 0.0
+			_update_camera_scanner()
 
 
 # =========================================================================
@@ -1151,6 +2059,57 @@ func _on_tool_changed(mode: PlayerToolController.ToolMode, _name: String) -> voi
 		else:
 			btn.modulate = Color(1.0, 1.0, 1.0)
 
+	# Update Hotbar slot glows
+	for hm in _hotbar_buttons.keys():
+		var hbtn: Button = _hotbar_buttons[hm]
+		if hm == mode:
+			var active_style: StyleBoxFlat = _create_glass_style(Color(0.12, 0.22, 0.35, 0.95), Color(1.0, 0.78, 0.25, 0.95), 5)
+			active_style.set_border_width_all(2)
+			hbtn.add_theme_stylebox_override("normal", active_style)
+			hbtn.modulate = Color(1.2, 1.2, 1.0)
+		else:
+			var normal_style: StyleBoxFlat = _create_glass_style(Color(0.08, 0.12, 0.18, 0.85), Color(0.30, 0.50, 0.70, 0.5), 4)
+			hbtn.add_theme_stylebox_override("normal", normal_style)
+			hbtn.modulate = Color(1.0, 1.0, 1.0)
+
+	# Update Contextual Operation Action Hint
+	if _tool_context_label:
+		match mode:
+			PlayerToolController.ToolMode.TORCH:
+				_tool_context_label.text = "[LMB] Place Standing Torch  |  [Shift+LMB] Controlled Ash Burn  |  [RMB] Build Cozy Campfire"
+			PlayerToolController.ToolMode.SHELTER:
+				_tool_context_label.text = "[LMB] Pitch Field Lean-to Canvas Tent — Rest, Rain Protection & Fast-Forward Diurnal Clock"
+			PlayerToolController.ToolMode.FORAGE:
+				_tool_context_label.text = "[LMB] Harvest Wild Alpine Berries from Bushes  |  [RMB] Feed & Calm Nearby Wildlife"
+			PlayerToolController.ToolMode.INSPECT:
+				_tool_context_label.text = "[LMB] Sample Soil & Inspect Living Fauna/Flora Entity Details"
+			PlayerToolController.ToolMode.MOISTURE_ADD:
+				_tool_context_label.text = "[LMB] Saturate Soil with Moisture Brush  |  [ / ] Adjust Radius"
+			PlayerToolController.ToolMode.MOISTURE_SUB:
+				_tool_context_label.text = "[LMB] Desiccate Soil Moisture  |  [ / ] Adjust Radius"
+			PlayerToolController.ToolMode.SPAWN_PLANT:
+				_tool_context_label.text = "[LMB] Seed New Plant / Bush at Target Point"
+			PlayerToolController.ToolMode.SPAWN_HERBIVORE:
+				_tool_context_label.text = "[LMB] Spawn Grazing Island Deer with Adaptive Genome"
+			PlayerToolController.ToolMode.SPAWN_PREDATOR:
+				_tool_context_label.text = "[LMB] Spawn Mountain Stalker Apex Predator"
+			PlayerToolController.ToolMode.DELETE_ENTITY:
+				_tool_context_label.text = "[LMB] Delete Entity within 3.5m Radius"
+			PlayerToolController.ToolMode.HEATWAVE:
+				_tool_context_label.text = "[LMB] Induce Heatwave (+8°C) Over Brush Area"
+			PlayerToolController.ToolMode.FROST:
+				_tool_context_label.text = "[LMB] Induce Frost Chill (-8°C) Over Brush Area"
+			PlayerToolController.ToolMode.SOIL_FERTILIZE:
+				_tool_context_label.text = "[LMB] Enrich Soil Nutrients to Accelerate Flora Regrowth"
+			PlayerToolController.ToolMode.DISASTER_SHOCK:
+				_tool_context_label.text = "[LMB] Trigger Micro-Disaster Ecological Shock"
+			PlayerToolController.ToolMode.MUTATE_POPULATION:
+				_tool_context_label.text = "[LMB] Stimulate Genetic Mutation Pulse in Local Fauna"
+			PlayerToolController.ToolMode.CLIMATE_PULSE:
+				_tool_context_label.text = "[LMB] Trigger Deluge Rainfall Climate Pulse (25s)"
+			_:
+				_tool_context_label.text = "Select a tool or press [1 - 0] to interact with the island sandbox"
+
 func _on_radius_changed(rad: float) -> void:
 	if _radius_label:
 		_radius_label.text = "Radius: %.1fm ([ / ])" % rad
@@ -1208,6 +2167,14 @@ func show_toast(msg: String, is_success: bool = true) -> void:
 	_toast_panel.visible = true
 	_toast_timer = 2.5
 
+func show_welcome_banner() -> void:
+	if not _toast_panel or not _toast_label:
+		return
+	_toast_label.text = "🌿 LIVING PLANET SANDBOX\nExplore the wilderness • [W/A/S/D] Move • [V] Camera • [M] Map • [Esc] Menu"
+	_toast_label.add_theme_color_override("font_color", Color(0.45, 0.95, 0.85))
+	_toast_panel.visible = true
+	_toast_timer = 6.0
+
 func _format_bar(val: float, max_val: float, length: int = 10) -> String:
 	var ratio: float = clampf(val / max_val if max_val > 0.0 else 0.0, 0.0, 1.0)
 	var filled: int = int(round(ratio * float(length)))
@@ -1239,6 +2206,8 @@ func _on_inspection_performed(data: Dictionary) -> void:
 		txt += "Vitality:   %s\n" % _format_bar(hp, 100.0)
 		if ent.has("energy"):
 			txt += "Metabolism: %s\n" % _format_bar(float(ent.get("energy", 0.0)), 100.0)
+		if ent.has("hydration"):
+			txt += "Hydration:  %s\n" % _format_bar(float(ent.get("hydration", 100.0)), 100.0)
 		if ent.has("biomass"):
 			var bio: float = float(ent.get("biomass", 0.0))
 			var max_b: float = float(ent.get("max_biomass", 10.0))
@@ -1251,8 +2220,10 @@ func _on_inspection_performed(data: Dictionary) -> void:
 			"EATING": state_desc = "Grazing on plant biomass"
 			"FORAGING": state_desc = "Seeking food source within scent radius"
 			"HUNTING": state_desc = "Stalking prey herbivores"
-			"FLEEING": state_desc = "Sprinting away from predator threat"
-			"RESTING": state_desc = "Resting, conserving metabolic energy"
+			"FLEEING": state_desc = "Sprinting away from danger / disturbance"
+			"ALERT": state_desc = "Vigilant: head raised, scanning clearing"
+			"DRINKING": state_desc = "Drinking freshwater at lake shoreline"
+			"RESTING": state_desc = "Resting peacefully under canopy cover"
 			"STARVING": state_desc = "CRITICAL: Zero energy, taking damage!"
 			"WANDERING": state_desc = "Exploring natural habitat"
 			_: state_desc = "Active in habitat"
@@ -1392,6 +2363,10 @@ func log_event(category: String, desc: String) -> void:
 		elif category == "WEATHER": c = Color(0.5, 0.8, 1.0)
 		lbl.add_theme_color_override("font_color", c)
 		_event_log_vbox.add_child(lbl)
+		while _event_log_vbox.get_child_count() > MAX_EVENT_LOG:
+			var old_child: Node = _event_log_vbox.get_child(0)
+			_event_log_vbox.remove_child(old_child)
+			old_child.queue_free()
 
 		# Auto scroll
 		if _event_scroll:
@@ -1415,39 +2390,196 @@ func _create_spacer() -> Control:
 	return sp
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Camera Viewfinder Interactive Controls (Zoom, Shutter)
+	if _camera_overlay and _camera_overlay.is_active:
+		if event is InputEventMouseButton and event.is_pressed():
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_camera_overlay.adjust_zoom(0.5)
+				if _camera:
+					_camera.fov = clampf(_original_fov / _camera_overlay.zoom_level, 10.0, 75.0)
+				get_viewport().set_input_as_handled()
+				return
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_camera_overlay.adjust_zoom(-0.5)
+				if _camera:
+					_camera.fov = clampf(_original_fov / _camera_overlay.zoom_level, 10.0, 75.0)
+				get_viewport().set_input_as_handled()
+				return
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				toggle_field_camera()
+				get_viewport().set_input_as_handled()
+				return
+			elif event.button_index == MOUSE_BUTTON_LEFT:
+				var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null
+				var time_str: String = "08:00"
+				if clock:
+					var h_int: int = int(clock.get_sim_hour())
+					var m_int: int = int((clock.get_sim_hour() - float(h_int)) * 60.0)
+					time_str = "%02d:%02d" % [h_int, m_int]
+				_camera_overlay.snap_photo("Emerald Basin", time_str)
+				get_viewport().set_input_as_handled()
+				return
+
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		match event.keycode:
 			KEY_TAB:
-				toggle_side_panels()
+				if _map_modal and _map_modal.visible and _map_canvas:
+					var active: bool = _map_canvas.toggle_wildlife_heatmaps()
+					show_toast("Wildlife Heatmaps: %s [TAB]" % ("ON" if active else "OFF"), true)
+					get_viewport().set_input_as_handled()
+				else:
+					toggle_side_panels()
 			KEY_H:
 				toggle_hud()
 			KEY_ESCAPE:
-				toggle_menu_modal()
+				if _camera_overlay and _camera_overlay.is_active:
+					toggle_field_camera()
+				elif _summary_modal and _summary_modal.visible:
+					_summary_modal.visible = false
+					_on_summary_closed()
+				elif _journal_modal and _journal_modal.visible:
+					toggle_journal_modal()
+				elif _map_modal and _map_modal.visible:
+					toggle_map_modal()
+				else:
+					toggle_menu_modal()
 			KEY_F1:
 				open_help_modal()
+			KEY_M:
+				toggle_map_modal()
+			KEY_J:
+				toggle_journal_modal()
+			KEY_Z:
+				toggle_field_camera()
+			KEY_X:
+				if _camera_overlay:
+					_camera_overlay.toggle_acoustic_mode()
+					var msg: String = "ON [X]" if _camera_overlay.is_acoustic_mode else "OFF [X]"
+					show_toast("🎙️ Parabolic Bio-Acoustic Microphone: " + msg, true)
+					get_viewport().set_input_as_handled()
+			KEY_R:
+				if _camera_overlay and _camera_overlay.is_active and _camera_overlay.is_acoustic_mode:
+					var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null
+					var time_str: String = "12:00"
+					if clock:
+						var h_int: int = int(clock.get_sim_hour())
+						var m_int: int = int((clock.get_sim_hour() - float(h_int)) * 60.0)
+						time_str = "%02d:%02d" % [h_int, m_int]
+					var log_res: Dictionary = _camera_overlay.record_sound_log("Sunlit Basin", time_str)
+					show_toast("🎙️ Acoustic Log Recorded: %s (%.0f Hz)" % [log_res.get("species", "Audio"), log_res.get("frequency_hz", 185.0)], true)
+					get_viewport().set_input_as_handled()
+			KEY_C:
+				toggle_commissions_card()
 			KEY_SPACE:
-				if _camera is FreeLookCamera and (_camera as FreeLookCamera).current_mode == FreeLookCamera.CameraMode.FIRST_PERSON_WALKER:
-					pass # Space is jump in Walker mode; do not toggle pause
+				if _camera_overlay and _camera_overlay.is_active:
+					var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null
+					var time_str: String = "08:00"
+					if clock:
+						var h_int: int = int(clock.get_sim_hour())
+						var m_int: int = int((clock.get_sim_hour() - float(h_int)) * 60.0)
+						time_str = "%02d:%02d" % [h_int, m_int]
+					_camera_overlay.snap_photo("Emerald Basin", time_str)
+					get_viewport().set_input_as_handled()
 				else:
-					_on_pause_pressed()
+					pass # Space is Jump in character modes / Ascend in Flycam; [P] is the authoritative pause hotkey
 			KEY_P:
 				_on_pause_pressed()
 			KEY_F5:
 				_on_quicksave_pressed()
 			KEY_F9:
 				_on_quickload_pressed()
-			KEY_T, KEY_Y:
+			KEY_L:
+				if _camera and _camera.get_walker():
+					var active: bool = _camera.get_walker().toggle_torch()
+					show_toast("🔥 Wilderness Torch: %s [L]" % ("LIT" if active else "OFF"), true)
+					get_viewport().set_input_as_handled()
+			KEY_T:
+				_on_step_time_pressed()
+			KEY_Y:
 				_on_cycle_weather_pressed()
+			KEY_G:
+				_on_cycle_graphics_preset()
 			KEY_F:
-				_on_track_entity_pressed()
+				if _camera_overlay and _camera_overlay.is_active:
+					_camera_overlay.cycle_filter_mode()
+					show_toast("Lens Optical Filter: %s [F]" % _camera_overlay.get_filter_name(), true)
+					get_viewport().set_input_as_handled()
+				else:
+					_on_track_entity_pressed()
+			KEY_C:
+				if _camera_overlay and _camera_overlay.is_active:
+					_camera_overlay.cycle_filter_mode()
+					show_toast("Lens Optical Filter: %s [C]" % _camera_overlay.get_filter_name(), true)
+					get_viewport().set_input_as_handled()
+
+func _on_step_time_pressed() -> void:
+	if not _bootstrap or not _bootstrap.clock:
+		return
+	var clock: WorldClock = _bootstrap.clock
+	var next_hour: float = fmod(clock.get_sim_hour() + 2.0, 24.0)
+	clock.set_sim_hour(next_hour)
+	var scene_root: Node = get_tree().current_scene if get_tree() else null
+	if scene_root:
+		var dnc: DayNightCycle = scene_root.find_child("DayNightCycle", true, false) as DayNightCycle
+		if dnc:
+			dnc.set_dynamic()
+	var h_int: int = int(next_hour)
+	var m_int: int = int((next_hour - float(h_int)) * 60.0)
+	var phase_str: String = "Day" if clock.is_daytime() else "Night"
+	show_toast("Time of Day: %02d:%02d (%s) [+2h] [T]" % [h_int, m_int, phase_str], true)
 
 func _on_cycle_weather_pressed() -> void:
 	if not _bootstrap or not _bootstrap.weather_system:
 		return
 	var weather: WeatherSystem = _bootstrap.weather_system
-	var next_st: int = (int(weather.current_state) + 1) % 4
-	weather.set_state(next_st as WeatherSystem.WeatherState, 60.0)
-	show_toast("Weather changed to: %s %s [Y]" % [WeatherSystem.get_state_icon(next_st as WeatherSystem.WeatherState), WeatherSystem.get_state_name(next_st as WeatherSystem.WeatherState)], true)
+	if not weather.manual_override:
+		weather.set_manual_state(WeatherSystem.WeatherState.CLEAR)
+		show_toast("Weather: ☀️ Clear Skies [Manual Override] [Y]", true)
+	else:
+		match weather.current_state:
+			WeatherSystem.WeatherState.CLEAR:
+				weather.set_manual_state(WeatherSystem.WeatherState.CLOUDY)
+				show_toast("Weather: ☁️ Overcast Clouds [Manual Override] [Y]", true)
+			WeatherSystem.WeatherState.CLOUDY:
+				weather.set_manual_state(WeatherSystem.WeatherState.RAIN)
+				show_toast("Weather: 🌧️ Gentle Rain [Manual Override] [Y]", true)
+			WeatherSystem.WeatherState.RAIN:
+				weather.set_manual_state(WeatherSystem.WeatherState.DROUGHT)
+				show_toast("Weather: 🌵 Arid Drought [Manual Override] [Y]", true)
+			WeatherSystem.WeatherState.DROUGHT:
+				weather.clear_manual_override()
+				show_toast("Weather: 🔄 Auto Dynamic Simulation Restored [Y]", true)
+
+func _set_weather_preset(preset: String) -> void:
+	if not _bootstrap or not _bootstrap.weather_system:
+		return
+	var weather: WeatherSystem = _bootstrap.weather_system
+	var clock: WorldClock = _bootstrap.world_clock if _bootstrap else null
+
+	match preset:
+		"clear":
+			weather.set_manual_state(WeatherSystem.WeatherState.CLEAR)
+			if clock:
+				clock.current_time_seconds = 12.0 * 3600.0
+			show_toast("Thời tiết: ☀️ Trời Nắng Trong Xanh (12:00)", true)
+		"sunset":
+			weather.set_manual_state(WeatherSystem.WeatherState.CLEAR)
+			if clock:
+				clock.current_time_seconds = 18.0 * 3600.0
+			show_toast("Thời tiết: 🌅 Hoàng Hôn Rực Rỡ (18:00)", true)
+		"rain":
+			weather.set_manual_state(WeatherSystem.WeatherState.RAIN)
+			if clock:
+				clock.current_time_seconds = 14.5 * 3600.0
+			show_toast("Thời tiết: 🌧️ Mưa Rào & Sương Mù (14:30)", true)
+		"night":
+			weather.set_manual_state(WeatherSystem.WeatherState.CLEAR)
+			if clock:
+				clock.current_time_seconds = 23.0 * 3600.0
+			show_toast("Thời tiết: 🌙 Đêm Trăng Huyền Bí (23:00)", true)
+		"auto":
+			weather.clear_manual_override()
+			show_toast("Thời tiết: 🔄 Tự Động Theo Mô Phỏng Markov", true)
 
 func _on_camera_mode_btn_pressed() -> void:
 	if _camera is FreeLookCamera:
@@ -1501,3 +2633,67 @@ func _on_camera_bookmark_reached(_id: int, b_name: String) -> void:
 
 func _on_camera_entity_lost(id: int) -> void:
 	show_toast("Tracked Entity #%d was lost" % id, false)
+
+## Receives emergent world events from LivingWorldDirector and displays a styled toast banner.
+func _on_emergent_event(event_type: String, title: String, body: String, severity: String) -> void:
+	if not _toast_panel or not _toast_label:
+		return
+
+	# Choose colour by severity
+	var col: Color
+	match severity:
+		"critical": col = Color(1.0, 0.25, 0.20)      # vivid red
+		"warning":  col = Color(1.0, 0.72, 0.10)       # amber
+		"notice":   col = Color(0.35, 0.92, 0.55)      # soft green
+		_:          col = Color(0.35, 0.85, 1.0)        # info teal
+
+	_toast_label.text = "%s\n%s" % [title, body]
+	_toast_label.add_theme_color_override("font_color", col)
+	_toast_panel.visible = true
+	_toast_timer = 5.0   # emergent events stay longer than camera toasts
+
+	# Also log to the event log if it exists
+	_log_world_event(title, body, severity)
+
+
+func _log_world_event(title: String, body: String, severity: String) -> void:
+	if not _event_log_vbox:
+		return
+
+	var icon: String
+	match severity:
+		"critical": icon = "🔴"
+		"warning":  icon = "🟠"
+		"notice":   icon = "🟢"
+		_:          icon = "🔵"
+
+	var entry: Dictionary = {
+		"category": "WORLD",
+		"message": "%s %s — %s" % [icon, title, body]
+	}
+	_recent_events.append(entry)
+	if _recent_events.size() > MAX_EVENT_LOG:
+		_recent_events.pop_front()
+
+	var lbl: Label = Label.new()
+	lbl.text = "%s %s" % [icon, title]
+	lbl.tooltip_text = body
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.add_theme_font_size_override("font_size", 11)
+	match severity:
+		"critical": lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.35))
+		"warning":  lbl.add_theme_color_override("font_color", Color(1.0, 0.78, 0.20))
+		"notice":   lbl.add_theme_color_override("font_color", Color(0.45, 0.92, 0.58))
+		_:          lbl.add_theme_color_override("font_color", Color(0.6, 0.88, 1.0))
+	_event_log_vbox.add_child(lbl)
+
+	# Trim oldest entries from display
+	while _event_log_vbox.get_child_count() > MAX_EVENT_LOG:
+		var old_child: Node = _event_log_vbox.get_child(0)
+		_event_log_vbox.remove_child(old_child)
+		old_child.queue_free()
+
+	# Auto-scroll to latest
+	if _event_scroll:
+		_event_scroll.scroll_vertical = 99999
+

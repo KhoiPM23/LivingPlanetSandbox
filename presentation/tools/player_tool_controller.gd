@@ -10,6 +10,8 @@ signal inspection_performed(data: Dictionary)
 signal action_feedback(message: String, is_success: bool)
 signal radius_changed(new_radius: float)
 
+const WildernessTorchSystem = preload("res://presentation/tools/wilderness_torch_system.gd")
+
 enum ToolMode {
 	NONE = 0,
 	INSPECT = 1,
@@ -24,7 +26,11 @@ enum ToolMode {
 	SOIL_FERTILIZE = 10,
 	DISASTER_SHOCK = 11,
 	MUTATE_POPULATION = 12,
-	CLIMATE_PULSE = 13
+	CLIMATE_PULSE = 13,
+	TORCH = 14,
+	CAMPFIRE = 15,
+	SHELTER = 16,
+	FORAGE = 17
 }
 
 @export var camera_path: NodePath
@@ -100,6 +106,8 @@ func _update_visual_radius() -> void:
 func set_tool(new_tool: ToolMode) -> void:
 	active_tool = new_tool
 	_update_tool_visual_style()
+	if _brush_visual:
+		_brush_visual.visible = is_area_tool(active_tool)
 	tool_changed.emit(active_tool, get_tool_name(active_tool))
 
 func get_tool_name(mode: ToolMode) -> String:
@@ -117,7 +125,20 @@ func get_tool_name(mode: ToolMode) -> String:
 		ToolMode.DISASTER_SHOCK: return "Disaster Shock"
 		ToolMode.MUTATE_POPULATION: return "Mutate (Genes)"
 		ToolMode.CLIMATE_PULSE: return "Pulse (Deluge)"
+		ToolMode.TORCH: return "Wilderness Torch [8]"
+		ToolMode.CAMPFIRE: return "Cozy Campfire"
+		ToolMode.SHELTER: return "Field Shelter [9]"
+		ToolMode.FORAGE: return "Wild Forage [0]"
 		_: return "None"
+
+func is_area_tool(mode: ToolMode) -> bool:
+	match mode:
+		ToolMode.MOISTURE_ADD, ToolMode.MOISTURE_SUB, ToolMode.HEATWAVE, ToolMode.FROST, \
+		ToolMode.SOIL_FERTILIZE, ToolMode.DISASTER_SHOCK, ToolMode.MUTATE_POPULATION, ToolMode.CLIMATE_PULSE, \
+		ToolMode.TORCH, ToolMode.SHELTER, ToolMode.FORAGE:
+			return true
+		_:
+			return false
 
 func set_brush_radius(radius: float) -> void:
 	brush_radius = clampf(radius, 3.0, 25.0)
@@ -155,6 +176,12 @@ func _update_tool_visual_style() -> void:
 			col = Color(0.85, 0.25, 1.0, 0.85)
 		ToolMode.CLIMATE_PULSE:
 			col = Color(0.15, 0.95, 0.90, 0.85)
+		ToolMode.TORCH, ToolMode.CAMPFIRE:
+			col = Color(1.0, 0.72, 0.25, 0.85)
+		ToolMode.SHELTER:
+			col = Color(0.44, 0.75, 0.40, 0.85)
+		ToolMode.FORAGE:
+			col = Color(0.85, 0.35, 0.95, 0.85)
 		_:
 			col = Color(0.5, 0.5, 0.5, 0.0)
 	_brush_material.albedo_color = col
@@ -168,7 +195,7 @@ func _process(_delta: float) -> void:
 	_update_mouse_raycast()
 
 func _update_mouse_raycast() -> void:
-	if input_blocked:
+	if input_blocked or not is_area_tool(active_tool):
 		_has_hit = false
 		if _brush_visual:
 			_brush_visual.visible = false
@@ -250,12 +277,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_5: set_tool(ToolMode.SPAWN_HERBIVORE)
 			KEY_6: set_tool(ToolMode.SPAWN_PREDATOR)
 			KEY_7: set_tool(ToolMode.DELETE_ENTITY)
-			KEY_8: set_tool(ToolMode.HEATWAVE)
-			KEY_9: set_tool(ToolMode.FROST)
-			KEY_0: set_tool(ToolMode.SOIL_FERTILIZE)
-			KEY_MINUS: set_tool(ToolMode.DISASTER_SHOCK)
-			KEY_EQUAL: set_tool(ToolMode.MUTATE_POPULATION)
+			KEY_8: set_tool(ToolMode.TORCH)
+			KEY_9: set_tool(ToolMode.SHELTER)
+			KEY_0: set_tool(ToolMode.FORAGE)
+			KEY_MINUS: set_tool(ToolMode.HEATWAVE)
+			KEY_EQUAL: set_tool(ToolMode.FROST)
 			KEY_SEMICOLON: set_tool(ToolMode.CLIMATE_PULSE)
+			KEY_APOSTROPHE: set_tool(ToolMode.TORCH)
 			KEY_BRACKETLEFT:
 				set_brush_radius(brush_radius - 2.0)
 				action_feedback.emit("Brush radius: %.1fm" % brush_radius, true)
@@ -267,6 +295,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.is_pressed():
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			execute_active_tool()
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if active_tool == ToolMode.TORCH:
+				_execute_campfire()
+			elif active_tool == ToolMode.FORAGE:
+				_execute_feed_fauna()
 
 func execute_active_tool() -> void:
 	if input_blocked or not _has_hit or not _bootstrap:
@@ -299,6 +332,12 @@ func execute_active_tool() -> void:
 			_execute_mutate_population()
 		ToolMode.CLIMATE_PULSE:
 			_execute_climate_pulse()
+		ToolMode.TORCH:
+			_execute_torch()
+		ToolMode.SHELTER:
+			_execute_shelter()
+		ToolMode.FORAGE:
+			_execute_forage()
 
 func _execute_inspect() -> void:
 	var result: Dictionary = {
@@ -550,6 +589,157 @@ func _execute_climate_pulse() -> void:
 			"cells_affected": affected
 		})
 
+func _execute_torch() -> void:
+	var walker: FirstPersonWalker = null
+	if _camera is FreeLookCamera:
+		walker = (_camera as FreeLookCamera).get_walker()
+	if not walker and get_tree():
+		walker = get_tree().root.find_child("FirstPersonWalkerBody", true, false) as FirstPersonWalker
+
+	var ts: WildernessTorchSystem = walker.get_torch_system() if walker else null
+	if not ts and get_tree():
+		ts = get_tree().root.find_child("WildernessTorchSystem", true, false) as WildernessTorchSystem
+
+	if ts:
+		if Input.is_key_pressed(KEY_SHIFT):
+			var res: Dictionary = ts.ignite_ground_at(_current_hit_point, brush_radius)
+			_spawn_tool_pulse(_current_hit_point, Color(1.0, 0.45, 0.1, 0.95), brush_radius)
+			action_feedback.emit("Controlled Burn (%.1fm radius): %d plants cleared, %d cells enriched with ash!" % [
+				brush_radius, res.get("plants_cleared", 0), res.get("cells_enriched", 0)
+			], true)
+		else:
+			var place_pos: Vector3 = _current_hit_point + Vector3(0.0, 0.05, 0.0)
+			var torch_node: Node3D = ts.place_torch_at(place_pos)
+			if torch_node:
+				_spawn_tool_pulse(_current_hit_point, Color(1.0, 0.72, 0.25, 0.95), 2.0)
+				action_feedback.emit("Placed Wilderness Torch at (%.1f, %.1f) [Hold Shift for Controlled Burn]" % [_current_hit_point.x, _current_hit_point.z], true)
+				if _bootstrap and _bootstrap.world_event_bus:
+					_bootstrap.world_event_bus.publish("player_intervention", {
+						"action": "place_torch",
+						"pos": _current_hit_point
+					})
+			else:
+				action_feedback.emit("Could not place torch here.", false)
+	else:
+		action_feedback.emit("Wilderness Torch system not found.", false)
+
+func _execute_campfire() -> void:
+	if input_blocked or not _has_hit or not _bootstrap:
+		return
+	var walker: FirstPersonWalker = null
+	if _camera is FreeLookCamera:
+		walker = (_camera as FreeLookCamera).get_walker()
+	if not walker and get_tree():
+		walker = get_tree().root.find_child("FirstPersonWalkerBody", true, false) as FirstPersonWalker
+
+	var ts: WildernessTorchSystem = walker.get_torch_system() if walker else null
+	if not ts and get_tree():
+		ts = get_tree().root.find_child("WildernessTorchSystem", true, false) as WildernessTorchSystem
+
+	if ts:
+		var place_pos: Vector3 = _current_hit_point + Vector3(0.0, 0.05, 0.0)
+		var camp_node: Node3D = ts.place_campfire_at(place_pos)
+		if camp_node:
+			_spawn_tool_pulse(_current_hit_point, Color(1.0, 0.65, 0.28, 0.95), 3.5)
+			action_feedback.emit("Built Cozy Campfire at (%.1f, %.1f) — Stone ring, smoke & warmth aura!" % [_current_hit_point.x, _current_hit_point.z], true)
+			if _bootstrap and _bootstrap.world_event_bus:
+				_bootstrap.world_event_bus.publish("player_intervention", {
+					"action": "place_campfire",
+					"pos": _current_hit_point
+				})
+		else:
+			action_feedback.emit("Could not place campfire here.", false)
+	else:
+		action_feedback.emit("Wilderness Torch system not found.", false)
+
+func _execute_shelter() -> void:
+	if input_blocked or not _has_hit or not _bootstrap:
+		return
+	var walker: FirstPersonWalker = null
+	if _camera is FreeLookCamera:
+		walker = (_camera as FreeLookCamera).get_walker()
+	if not walker and get_tree():
+		walker = get_tree().root.find_child("FirstPersonWalkerBody", true, false) as FirstPersonWalker
+
+	var ts: WildernessTorchSystem = walker.get_torch_system() if walker else null
+	if not ts and get_tree():
+		ts = get_tree().root.find_child("WildernessTorchSystem", true, false) as WildernessTorchSystem
+
+	if ts:
+		var place_pos: Vector3 = _current_hit_point + Vector3(0.0, 0.05, 0.0)
+		var shelter_node: Node3D = ts.place_shelter_at(place_pos)
+		if shelter_node:
+			_spawn_tool_pulse(_current_hit_point, Color(0.44, 0.75, 0.40, 0.95), 3.5)
+			action_feedback.emit("Pitched Field Shelter at (%.1f, %.1f) — Rain protection & rest haven!" % [_current_hit_point.x, _current_hit_point.z], true)
+			if _bootstrap and _bootstrap.world_event_bus:
+				_bootstrap.world_event_bus.publish("player_intervention", {
+					"action": "place_shelter",
+					"pos": _current_hit_point
+				})
+		else:
+			action_feedback.emit("Could not place shelter here.", false)
+	else:
+		action_feedback.emit("Wilderness Survival system not found.", false)
+
+func _execute_forage() -> void:
+	if input_blocked or not _has_hit or not _bootstrap:
+		return
+	var walker: FirstPersonWalker = null
+	if _camera is FreeLookCamera:
+		walker = (_camera as FreeLookCamera).get_walker()
+	if not walker and get_tree():
+		walker = get_tree().root.find_child("FirstPersonWalkerBody", true, false) as FirstPersonWalker
+
+	var ts: WildernessTorchSystem = walker.get_torch_system() if walker else null
+	if not ts and get_tree():
+		ts = get_tree().root.find_child("WildernessTorchSystem", true, false) as WildernessTorchSystem
+
+	if ts:
+		var res: Dictionary = ts.harvest_bush_at(_current_hit_point)
+		if res.get("success", false):
+			var b_type: String = res.get("berry_type", "alpine_elderberry")
+			var count: int = res.get("count", 3)
+			var total: int = res.get("total_inventory", count)
+			_spawn_tool_pulse(_current_hit_point, Color(0.85, 0.35, 0.95, 0.95), 2.5)
+			action_feedback.emit("Foraged %dx %s! (Total In Bag: %d) [RMB to feed nearby wildlife]" % [count, b_type, total], true)
+		else:
+			var reason: String = res.get("reason", "empty")
+			if reason == "dormant":
+				action_feedback.emit("Bush has been stripped. Regrowth in %.0fs." % res.get("regrowth_left", 30.0), false)
+			else:
+				action_feedback.emit("No forageable berry bushes nearby.", false)
+	else:
+		action_feedback.emit("Wilderness Survival system not found.", false)
+
+func _execute_feed_fauna() -> void:
+	if input_blocked or not _has_hit or not _bootstrap:
+		return
+	var walker: FirstPersonWalker = null
+	if _camera is FreeLookCamera:
+		walker = (_camera as FreeLookCamera).get_walker()
+	if not walker and get_tree():
+		walker = get_tree().root.find_child("FirstPersonWalkerBody", true, false) as FirstPersonWalker
+
+	var ts: WildernessTorchSystem = walker.get_torch_system() if walker else null
+	if not ts and get_tree():
+		ts = get_tree().root.find_child("WildernessTorchSystem", true, false) as WildernessTorchSystem
+
+	var fsim: FaunaSimulation = _bootstrap.fauna_sim if _bootstrap else null
+
+	if ts:
+		var res: Dictionary = ts.feed_nearby_herbivore(_current_hit_point, fsim, 8.0)
+		if res.get("success", false):
+			_spawn_tool_pulse(_current_hit_point, Color(0.2, 0.95, 0.4, 0.95), 3.0)
+			action_feedback.emit("Fed %s to gentle herbivore! Threat cleared, energy restored." % res.get("berry_type", "berry"), true)
+		else:
+			var r: String = res.get("reason", "none")
+			if r == "no_berries":
+				action_feedback.emit("No berries in bag! Harvest bushes with [LMB] first.", false)
+			else:
+				action_feedback.emit("No calm herbivores close enough to feed.", false)
+	else:
+		action_feedback.emit("Wilderness Survival system not found.", false)
+
 func _record_experiment_history(action_name: String, action_type: String) -> void:
 	if not _bootstrap or not _bootstrap.ecosystem_coordinator:
 		return
@@ -679,6 +869,7 @@ func _find_closest_entity(pos: Vector3, max_dist: float) -> Dictionary:
 					"position": h.position,
 					"health": h.health,
 					"energy": h.energy,
+					"hydration": h.hydration,
 					"age": h.age,
 					"state_name": _get_herbivore_state_name(h.state),
 					"life_stage_name": _get_life_stage_name(h.life_stage),
@@ -697,6 +888,7 @@ func _find_closest_entity(pos: Vector3, max_dist: float) -> Dictionary:
 					"position": p.position,
 					"health": p.health,
 					"energy": p.energy,
+					"hydration": p.hydration,
 					"age": p.age,
 					"state_name": _get_predator_state_name(p.state),
 					"life_stage_name": _get_life_stage_name(p.life_stage),
@@ -732,6 +924,8 @@ func _get_herbivore_state_name(state: int) -> String:
 		3: return "RESTING"
 		4: return "FLEEING"
 		5: return "STARVING"
+		6: return "DRINKING"
+		7: return "ALERT"
 		_: return "UNKNOWN"
 
 func _get_predator_state_name(state: int) -> String:
@@ -741,6 +935,8 @@ func _get_predator_state_name(state: int) -> String:
 		2: return "EATING"
 		3: return "RESTING"
 		4: return "STARVING"
+		5: return "DRINKING"
+		6: return "ALERT"
 		_: return "UNKNOWN"
 
 func _get_growth_stage_name(stage: int) -> String:

@@ -1,0 +1,19 @@
+{
+	"avg_draw_calls": 275,
+	"avg_fps": 53.5,
+	"avg_frame_time_ms": 18.7,
+	"avg_node_count": 843,
+	"avg_primitives": 930584,
+	"avg_static_memory_mb": 110.22,
+	"engine": "Godot 4.6.3-stable (Vulkan 1.4 Forward+)",
+	"hardware": "Intel Iris Xe Graphics (Shared VRAM, 16 GB System RAM, Windows 11)",
+	"max_draw_calls": 687,
+	"max_fps": 106.2,
+	"max_primitives": 2589618,
+	"min_fps": 0.1,
+	"one_percent_low_fps": 2.9,
+	"peak_static_memory_mb": 110.5,
+	"resolution": "1280x720",
+	"sampled_frames": 230,
+	"timestamp": "2026-10-17T03:25:07"
+}

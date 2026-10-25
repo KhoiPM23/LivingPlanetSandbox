@@ -66,9 +66,9 @@ func _init(
 func bind_terrain_height(callable: Callable) -> void:
 	_terrain_height_func = callable
 
-func set_player_presence(player_pos: Vector3, is_active: bool) -> void:
+func set_player_presence(player_pos: Vector3, is_active: bool, player_speed: float = -1.0) -> void:
 	if fauna_sim:
-		fauna_sim.set_player_presence(player_pos, is_active)
+		fauna_sim.set_player_presence(player_pos, is_active, player_speed)
 
 func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14, predator_count: int = 2) -> void:
 	# Clear existing
@@ -119,47 +119,78 @@ func populate_initial_ecosystem(plant_count: int = 60, herbivore_count: int = 14
 			var species: String = "shrub_bush" if (_rng.randf() < 0.35) else "grass_patch"
 			flora_sim.spawn_plant(species, Vector3(x, y, z), _rng.randf_range(2.0, 5.0))
 
-	# 2. Spawn initial herbivores clustered in primary foraging & watering niches
-	var meadow_herbs: int = int(herbivore_count * 0.65)
-	var basin_herbs: int = int(herbivore_count * 0.25)
-	var forest_herbs: int = herbivore_count - (meadow_herbs + basin_herbs)
+	# 2. Spawn initial herbivores across ecological niches across the island
+	var spawned_herb_positions: Array[Vector3] = []
+	var herb_regions: Array[Dictionary] = [
+		{"name": "meadow_glade", "min_x": 3.0, "max_x": 16.0, "min_z": 0.0, "max_z": 9.0, "weight": 0.22},
+		{"name": "basin_cove", "min_x": 12.0, "max_x": 20.5, "min_z": 8.5, "max_z": 17.5, "weight": 0.16},
+		{"name": "whispering_forest", "min_x": -75.0, "max_x": -15.0, "min_z": -35.0, "max_z": 45.0, "weight": 0.22},
+		{"name": "grand_lake_shores", "min_x": 70.0, "max_x": 125.0, "min_z": 60.0, "max_z": 115.0, "weight": 0.20},
+		{"name": "highland_plateau", "min_x": 95.0, "max_x": 185.0, "min_z": -95.0, "max_z": -15.0, "weight": 0.20}
+	]
 
-	# 2a. Sunlit Meadow Glade herd (grazing on wildflower meadows)
-	for i: int in range(meadow_herbs):
-		var x: float = _rng.randf_range(4.0, 15.0)
-		var z: float = _rng.randf_range(0.5, 8.5)
-		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 1.5
-		if y > 0.4:
-			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(75.0, 95.0))
+	for i: int in range(herbivore_count):
+		var reg: Dictionary
+		if i < 10:
+			reg = herb_regions[1] if (i >= 4) else herb_regions[0]
+		else:
+			reg = herb_regions[i % herb_regions.size()]
+		var pos: Vector3 = Vector3.ZERO
+		var found: bool = false
+		for attempt: int in range(36):
+			var rx: float = _rng.randf_range(reg["min_x"], reg["max_x"])
+			var rz: float = _rng.randf_range(reg["min_z"], reg["max_z"])
+			var ry: float = _terrain_height_func.call(rx, rz) if _terrain_height_func.is_valid() else 1.5
+			if ry <= 0.4:
+				continue
+			var candidate: Vector3 = Vector3(rx, ry, rz)
+			if Vector2(candidate.x - 7.5, candidate.z - 3.5).length() < 6.2:
+				continue
+			var too_close: bool = false
+			for prev_p: Vector3 in spawned_herb_positions:
+				if candidate.distance_to(prev_p) < 2.5:
+					too_close = true
+					break
+			if not too_close:
+				pos = candidate
+				found = true
+				break
+		if not found:
+			var fx: float = 12.0 + float(i % 7) * 1.3
+			var fz: float = 9.0 + float((i * 2) % 7) * 1.3
+			var fy: float = _terrain_height_func.call(fx, fz) if _terrain_height_func.is_valid() else 1.5
+			var fallback_pos: Vector3 = Vector3(fx, maxf(0.5, fy), fz)
+			for offset_attempt: int in range(16):
+				var cl: bool = false
+				for prev_p: Vector3 in spawned_herb_positions:
+					if fallback_pos.distance_to(prev_p) < 2.55:
+						cl = true
+						break
+				if not cl and Vector2(fallback_pos.x - 7.5, fallback_pos.z - 3.5).length() >= 6.2:
+					break
+				fallback_pos.x += 1.2
+				fallback_pos.z += 1.1
+			pos = fallback_pos
+		spawned_herb_positions.append(pos)
+		fauna_sim.spawn_herbivore(pos, _rng.randf_range(75.0, 95.0))
 
-	# 2b. Emerald Basin Cove shoreline group (watering hole & creek delta)
-	for i: int in range(basin_herbs):
-		var x: float = _rng.randf_range(12.0, 20.0)
-		var z: float = _rng.randf_range(9.0, 17.0)
-		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 0.6
-		if y > 0.4:
-			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(70.0, 90.0))
+	# 3. Spawn initial predators distributed across regional hunting territories
+	var pred_regions: Array[Vector3] = [
+		Vector3(-14.0, 3.5, -12.0), # High North Ridge
+		Vector3(-45.0, 4.2, 18.0),  # Whispering Deep Forest
+		Vector3(135.0, 8.5, -45.0), # Highland Plateau Ridge
+		Vector3(110.0, 2.5, 95.0),  # Grand Lake Woods Margin
+		Vector3(-25.0, 4.0, 140.0), # Cape Solitude Bluffs
+		Vector3(-65.0, 12.0, -55.0),# Grotto Foothills
+		Vector3(55.0, 2.2, 35.0),   # South Meadow Valley
+		Vector3(-95.0, 6.0, 25.0)   # Western Forest Slopes
+	]
 
-	# 2c. Whispering Forest ecotone (sheltered browsing)
-	for i: int in range(forest_herbs):
-		var x: float = _rng.randf_range(-10.0, -1.0)
-		var z: float = _rng.randf_range(-5.0, 2.5)
-		var y: float = _terrain_height_func.call(x, z) if _terrain_height_func.is_valid() else 2.5
-		if y > 0.4:
-			fauna_sim.spawn_herbivore(Vector3(x, y, z), _rng.randf_range(75.0, 92.0))
-
-	# 3. Spawn initial predators in natural predatory vantages & forest perimeter
-	# Predator 1: High North Ridge overlooking the valley and basin
-	var p1_x: float = _rng.randf_range(-18.0, -10.0)
-	var p1_z: float = _rng.randf_range(-18.0, -8.0)
-	var p1_y: float = _terrain_height_func.call(p1_x, p1_z) if _terrain_height_func.is_valid() else 3.5
-	fauna_sim.spawn_predator(Vector3(p1_x, maxf(0.5, p1_y), p1_z), 85.0)
-
-	# Predator 2+: Forest perimeter stalkers
-	for i: int in range(1, predator_count):
-		var px: float = _rng.randf_range(-15.0, -7.0)
-		var pz: float = _rng.randf_range(-4.0, 4.0)
-		var py: float = _terrain_height_func.call(px, pz) if _terrain_height_func.is_valid() else 2.5
+	for i: int in range(predator_count):
+		var p_base: Vector3 = pred_regions[i % pred_regions.size()]
+		var px: float = p_base.x + _rng.randf_range(-6.0, 6.0)
+		var pz: float = p_base.z + _rng.randf_range(-6.0, 6.0)
+		var py: float = _terrain_height_func.call(px, pz) if _terrain_height_func.is_valid() else p_base.y
 		fauna_sim.spawn_predator(Vector3(px, maxf(0.5, py), pz), 85.0)
 
 	if _event_bus:
@@ -196,12 +227,12 @@ func _on_ecosystem_tick(_tick_num: int, _sim_time: float) -> void:
 func step_simulation(delta_sim: float) -> void:
 	var start_usec: int = Time.get_ticks_usec()
 
-	# Compute diurnal solar hour for coupled ecological behaviors (120s full day, 09:00 morning offset)
+	# Compute diurnal solar hour from authoritative WorldClock
 	var sim_hour: float = 12.0
 	if _world_clock:
-		var sim_time: float = _world_clock.simulation_time + 45.0
-		var day_phase: float = fmod(sim_time / 120.0, 1.0)
-		sim_hour = day_phase * 24.0
+		sim_hour = _world_clock.get_sim_hour()
+		if flora_sim and _world_clock.has_method("get_season"):
+			flora_sim.set_active_season(_world_clock.get_season() as int)
 
 	# Step plant growth and environmental decay
 	if flora_sim and _env_grid:
@@ -211,22 +242,43 @@ func step_simulation(delta_sim: float) -> void:
 	if fauna_sim:
 		fauna_sim.step_simulation(delta_sim, flora_sim, _terrain_height_func, _weather_system, sim_hour)
 
-	# Compute live genetic telemetry
+	# Compute live genetic telemetry (single-pass running variance optimization)
 	var total_herb_speed: float = 0.0
 	var total_herb_size: float = 0.0
 	var total_herb_sense: float = 0.0
 	var total_herb_eff: float = 0.0
 	var total_herb_forage: float = 0.0
+	var sq_herb_speed: float = 0.0
+	var sq_herb_size: float = 0.0
+	var sq_herb_sense: float = 0.0
+	var sq_herb_eff: float = 0.0
+	var sq_herb_forage: float = 0.0
 	var max_gen: int = 1
 	var herbs: Array = fauna_sim.get_all_herbivores() if fauna_sim else []
 	for h in herbs:
 		if h.genome:
-			total_herb_speed += h.genome.speed
-			total_herb_size += h.genome.size
-			total_herb_sense += h.genome.sense_range
-			total_herb_eff += h.genome.energy_efficiency
-			total_herb_forage += h.genome.foraging
+			var spd: float = h.genome.speed
+			total_herb_speed += spd
+			sq_herb_speed += spd * spd
+
+			var sz: float = h.genome.size
+			total_herb_size += sz
+			sq_herb_size += sz * sz
+
+			var sn: float = h.genome.sense_range
+			total_herb_sense += sn
+			sq_herb_sense += sn * sn
+
+			var ef: float = h.genome.energy_efficiency
+			total_herb_eff += ef
+			sq_herb_eff += ef * ef
+
+			var fg: float = h.genome.foraging
+			total_herb_forage += fg
+			sq_herb_forage += fg * fg
+
 			max_gen = maxi(max_gen, h.genome.generation)
+
 	if herbs.size() > 0:
 		var h_len: float = float(herbs.size())
 		metrics.avg_herbivore_speed = total_herb_speed / h_len
@@ -234,18 +286,37 @@ func step_simulation(delta_sim: float) -> void:
 		metrics.avg_herbivore_sense_range = total_herb_sense / h_len
 		metrics.avg_herbivore_energy_efficiency = total_herb_eff / h_len
 		metrics.avg_herbivore_foraging = total_herb_forage / h_len
+
+		if herbs.size() > 1:
+			metrics.allele_speed_variance = maxf(0.0, (sq_herb_speed / h_len) - (metrics.avg_herbivore_speed * metrics.avg_herbivore_speed))
+			metrics.allele_size_variance = maxf(0.0, (sq_herb_size / h_len) - (metrics.avg_herbivore_size * metrics.avg_herbivore_size))
+			metrics.allele_sense_variance = maxf(0.0, (sq_herb_sense / h_len) - (metrics.avg_herbivore_sense_range * metrics.avg_herbivore_sense_range))
+			metrics.allele_efficiency_variance = maxf(0.0, (sq_herb_eff / h_len) - (metrics.avg_herbivore_energy_efficiency * metrics.avg_herbivore_energy_efficiency))
+			metrics.allele_foraging_variance = maxf(0.0, (sq_herb_forage / h_len) - (metrics.avg_herbivore_foraging * metrics.avg_herbivore_foraging))
+		else:
+			metrics.allele_speed_variance = 0.0
+			metrics.allele_size_variance = 0.0
+			metrics.allele_sense_variance = 0.0
+			metrics.allele_efficiency_variance = 0.0
+			metrics.allele_foraging_variance = 0.0
 	else:
 		metrics.avg_herbivore_speed = 0.0
 		metrics.avg_herbivore_size = 0.0
 		metrics.avg_herbivore_sense_range = 0.0
 		metrics.avg_herbivore_energy_efficiency = 0.0
 		metrics.avg_herbivore_foraging = 0.0
+		metrics.allele_speed_variance = 0.0
+		metrics.allele_size_variance = 0.0
+		metrics.allele_sense_variance = 0.0
+		metrics.allele_efficiency_variance = 0.0
+		metrics.allele_foraging_variance = 0.0
 
 	var total_pred_speed: float = 0.0
 	var total_pred_size: float = 0.0
 	var total_pred_sense: float = 0.0
 	var total_pred_eff: float = 0.0
 	var total_pred_predation: float = 0.0
+	var sq_pred_predation: float = 0.0
 	var preds: Array = fauna_sim.get_all_predators() if fauna_sim else []
 	for p in preds:
 		if p.genome:
@@ -253,8 +324,11 @@ func step_simulation(delta_sim: float) -> void:
 			total_pred_size += p.genome.size
 			total_pred_sense += p.genome.sense_range
 			total_pred_eff += p.genome.energy_efficiency
-			total_pred_predation += p.genome.predation
+			var pr: float = p.genome.predation
+			total_pred_predation += pr
+			sq_pred_predation += pr * pr
 			max_gen = maxi(max_gen, p.genome.generation)
+
 	if preds.size() > 0:
 		var p_len: float = float(preds.size())
 		metrics.avg_predator_speed = total_pred_speed / p_len
@@ -262,64 +336,34 @@ func step_simulation(delta_sim: float) -> void:
 		metrics.avg_predator_sense_range = total_pred_sense / p_len
 		metrics.avg_predator_energy_efficiency = total_pred_eff / p_len
 		metrics.avg_predator_predation = total_pred_predation / p_len
+		metrics.allele_predation_variance = maxf(0.0, (sq_pred_predation / p_len) - (metrics.avg_predator_predation * metrics.avg_predator_predation)) if preds.size() > 1 else 0.0
 	else:
 		metrics.avg_predator_speed = 0.0
 		metrics.avg_predator_size = 0.0
 		metrics.avg_predator_sense_range = 0.0
 		metrics.avg_predator_energy_efficiency = 0.0
 		metrics.avg_predator_predation = 0.0
+		metrics.allele_predation_variance = 0.0
 
 	var total_drought_tol: float = 0.0
+	var sq_drought_tol: float = 0.0
 	var plants: Array = flora_sim.get_all_plants() if flora_sim else []
 	for p in plants:
 		if p.genome:
-			total_drought_tol += p.genome.drought_tolerance
+			var dt: float = p.genome.drought_tolerance
+			total_drought_tol += dt
+			sq_drought_tol += dt * dt
 			max_gen = maxi(max_gen, p.genome.generation)
+
+	var drg_var: float = 0.0
 	if plants.size() > 0:
-		metrics.avg_plant_drought_tolerance = total_drought_tol / float(plants.size())
+		var pl_len: float = float(plants.size())
+		metrics.avg_plant_drought_tolerance = total_drought_tol / pl_len
+		drg_var = maxf(0.0, (sq_drought_tol / pl_len) - (metrics.avg_plant_drought_tolerance * metrics.avg_plant_drought_tolerance)) if plants.size() > 1 else 0.0
 	else:
 		metrics.avg_plant_drought_tolerance = 0.0
-	metrics.max_generation = max_gen
-
-	# Compute Allele Variances and Diversity
-	var speed_sq_sum: float = 0.0
-	var size_sq_sum: float = 0.0
-	var sense_sq_sum: float = 0.0
-	var eff_sq_sum: float = 0.0
-	var forage_sq_sum: float = 0.0
-	for h in herbs:
-		if h.genome:
-			var diff_spd: float = h.genome.speed - metrics.avg_herbivore_speed
-			speed_sq_sum += diff_spd * diff_spd
-			var diff_sz: float = h.genome.size - metrics.avg_herbivore_size
-			size_sq_sum += diff_sz * diff_sz
-			var diff_sn: float = h.genome.sense_range - metrics.avg_herbivore_sense_range
-			sense_sq_sum += diff_sn * diff_sn
-			var diff_ef: float = h.genome.energy_efficiency - metrics.avg_herbivore_energy_efficiency
-			eff_sq_sum += diff_ef * diff_ef
-			var diff_fg: float = h.genome.foraging - metrics.avg_herbivore_foraging
-			forage_sq_sum += diff_fg * diff_fg
-	var h_div: float = float(herbs.size()) if herbs.size() > 1 else 1.0
-	metrics.allele_speed_variance = speed_sq_sum / h_div if herbs.size() > 1 else 0.0
-	metrics.allele_size_variance = size_sq_sum / h_div if herbs.size() > 1 else 0.0
-	metrics.allele_sense_variance = sense_sq_sum / h_div if herbs.size() > 1 else 0.0
-	metrics.allele_efficiency_variance = eff_sq_sum / h_div if herbs.size() > 1 else 0.0
-	metrics.allele_foraging_variance = forage_sq_sum / h_div if herbs.size() > 1 else 0.0
-
-	var pred_sq_sum: float = 0.0
-	for p in preds:
-		if p.genome:
-			var diff_pr: float = p.genome.predation - metrics.avg_predator_predation
-			pred_sq_sum += diff_pr * diff_pr
-	metrics.allele_predation_variance = (pred_sq_sum / float(preds.size())) if preds.size() > 1 else 0.0
-
-	var drought_sq_sum: float = 0.0
-	for p in plants:
-		if p.genome:
-			var diff_p: float = p.genome.drought_tolerance - metrics.avg_plant_drought_tolerance
-			drought_sq_sum += diff_p * diff_p
-	var drg_var: float = (drought_sq_sum / float(plants.size())) if plants.size() > 1 else 0.0
 	metrics.allele_drought_variance = drg_var
+	metrics.max_generation = max_gen
 
 	# Demographic survival & birth rate calculation
 	var deaths_herb: int = int(metrics.deaths_by_cause.get("herbivore_starvation", 0)) + int(metrics.deaths_by_cause.get("herbivore_predation", 0)) + int(metrics.deaths_by_cause.get("herbivore_old_age", 0))

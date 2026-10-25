@@ -1,0 +1,29 @@
+{
+	"character_system": {
+		"crouch_stealth_supported": true,
+		"dual_perspective_supported": true,
+		"model": "KayKit Adventurers: Rogue (CC0 1.0 Universal)",
+		"proportions": "1.75m scaled height, 41 bones, natural ranger attire",
+		"teleport_drift_detected": false,
+		"toggle_key": "V"
+	},
+	"environment_system": {
+		"foliage_system": "Two-sided normal correction, depth prepass alpha, procedural blade gradient, distance-faded trees & rocks",
+		"terrain_pbr_upgrades": "Scanned ground micro-contrast, forest needle mulch, 3.6x micro detail normal, wave-wash shoreline wetness",
+		"water_system": "Gerstner dual-wave displacement, physical Beer-Lambert extinction, organic wave-wash foam"
+	},
+	"performance": {
+		"avg_draw_calls": 274.104761904762,
+		"avg_fps": 25.833840510398,
+		"avg_frametime_ms": 38.7089174603174,
+		"avg_memory_mb": 113.928828938802,
+		"avg_primitives": 699861.476190476,
+		"max_frametime_ms": 145.510999999999,
+		"min_frametime_ms": 15.734,
+		"p95_frametime_ms": 105.694666666668,
+		"total_frames_profiled": 105
+	},
+	"phase": "Overnight Autonomous Implementation Batch",
+	"platform": "Intel Iris Xe Graphics, Windows 11, Godot 4.6.3 Forward+ Vulkan",
+	"resolution": "1280x720 (Balanced Preset)"
+}

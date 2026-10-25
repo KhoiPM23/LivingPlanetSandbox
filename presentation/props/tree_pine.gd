@@ -80,6 +80,7 @@ static func get_shared_pine_bark_material() -> StandardMaterial3D:
 			_shared_pine_bark_mat.normal_scale = 1.2
 		_shared_pine_bark_mat.cull_mode = BaseMaterial3D.CULL_BACK
 		_shared_pine_bark_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+		_shared_pine_bark_mat.uv1_scale = Vector3(1.0, 2.5, 1.0)
 	return _shared_pine_bark_mat
 
 static func get_shared_pine_needle_material() -> ShaderMaterial:
@@ -106,7 +107,8 @@ static func get_shared_pine_needle_material() -> ShaderMaterial:
 		_shared_pine_needle_mat.set_shader_parameter("wind_speed", 1.15)
 		_shared_pine_needle_mat.set_shader_parameter("wind_strength", 0.16)
 		_shared_pine_needle_mat.set_shader_parameter("wetness", 0.0)
-		_shared_pine_needle_mat.set_shader_parameter("backlight_strength", 0.16)
+		_shared_pine_needle_mat.set_shader_parameter("backlight_strength", 0.38)
+		_shared_pine_needle_mat.set_shader_parameter("max_draw_distance", 0.0)
 	return _shared_pine_needle_mat
 
 static func get_shared_snag_material() -> StandardMaterial3D:
@@ -175,10 +177,15 @@ func _build_tree() -> void:
 			if chosen_mesh.get_surface_count() > 1:
 				tree_inst.set_surface_override_material(1, get_shared_pine_needle_material())
 
-		tree_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		tree_inst.visibility_range_end = 115.0
-		tree_inst.visibility_range_end_margin = 15.0
-		tree_inst.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# Only trees near player glade cast dynamic shadows; distant trees disable shadows for GPU fillrate
+		var dist_from_center: float = position.length()
+		if dist_from_center > 28.0:
+			tree_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			tree_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		tree_inst.visibility_range_end = 480.0
+		tree_inst.visibility_range_end_margin = 40.0
+		tree_inst.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		var height_var: float = randf_range(0.92, 1.18)
 		scale = Vector3(base_scale, base_scale * height_var, base_scale)
 
@@ -190,6 +197,8 @@ func _build_tree() -> void:
 			tilt_z = randf_range(-0.14, 0.14)
 		tree_inst.rotation.x = tilt_x
 		tree_inst.rotation.z = tilt_z
+		# Embed root base into ground so root flares never float on slopes
+		tree_inst.position.y = -0.35
 
 		add_child(tree_inst)
 

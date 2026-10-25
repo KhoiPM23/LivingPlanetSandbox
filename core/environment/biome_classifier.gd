@@ -24,8 +24,8 @@ static func classify(temperature: float, moisture: float, elevation: float, wate
 			return BiomeType.WETLAND
 		return BiomeType.COASTAL_BEACH
 		
-	# 3. High altitude / Alpine Summit rule
-	if elevation >= 12.0 or temperature < 6.0:
+	# 3. High altitude / Alpine Summit rule (cold summit peak or alpine elevation >= 32m)
+	if elevation >= 32.0 or (elevation >= 12.0 and temperature < 6.0):
 		return BiomeType.ALPINE_SUMMIT
 		
 	# 4. Moisture and temperature matrix

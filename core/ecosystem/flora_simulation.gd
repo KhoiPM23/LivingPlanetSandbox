@@ -30,6 +30,7 @@ class PlantData:
 	var optimal_temp_max: float = 32.0 # °C
 	var base_growth_rate: float = 0.4 # Biomass gained per second in ideal conditions
 	var spread_cooldown: float = 15.0 # Seconds between reproduction attempts
+	var nutritional_value: float = 1.0 # Caloric nutrition multiplier
 	var genome: EcosystemGenome = null
 
 	func _init(p_id: int, p_species: String, p_pos: Vector3, p_max_biomass: float = 10.0, p_genome: EcosystemGenome = null) -> void:
@@ -131,10 +132,25 @@ func get_plant_count() -> int:
 func get_all_plants() -> Array:
 	return _plants.values()
 
-## Finds closest plant with sufficient biomass within radius
-func find_nearest_food(pos: Vector3, search_radius: float, min_biomass: float = 1.0) -> PlantData:
+var active_season: int = 0 # 0=SPRING, 1=SUMMER, 2=AUTUMN, 3=WINTER
+
+func set_active_season(season: int) -> void:
+	active_season = season
+
+func get_active_season() -> int:
+	return active_season
+
+func get_plant_nutrition(plant_id: int) -> float:
+	if _plants.has(plant_id):
+		return _plants[plant_id].nutritional_value
+	return 1.0
+
+## Finds closest plant with sufficient biomass within radius, optionally biased toward preferred species
+func find_nearest_food(pos: Vector3, search_radius: float, min_biomass: float = 1.0, preferred_species: String = "") -> PlantData:
 	var min_dist_sq: float = search_radius * search_radius
 	var best_plant: PlantData = null
+	var best_pref_plant: PlantData = null
+	var min_pref_dist_sq: float = search_radius * search_radius * 1.5
 
 	var min_cx: int = int(floor((pos.x - search_radius) / GRID_CELL_SIZE))
 	var max_cx: int = int(floor((pos.x + search_radius) / GRID_CELL_SIZE))
@@ -151,10 +167,18 @@ func find_nearest_food(pos: Vector3, search_radius: float, min_biomass: float = 
 				var p: PlantData = _plants.get(pid, null)
 				if p and p.biomass >= min_biomass and p.stage != GrowthStage.DEAD:
 					var dist_sq: float = pos.distance_squared_to(p.position)
-					if dist_sq < min_dist_sq:
-						min_dist_sq = dist_sq
+					# High-nutrition ash shoots have stronger olfactory attraction to herbivores
+					var nutrition_weight: float = 1.6 if p.nutritional_value > 1.25 else 1.0
+					var weighted_dist_sq: float = dist_sq / nutrition_weight
+					if weighted_dist_sq < min_dist_sq:
+						min_dist_sq = weighted_dist_sq
 						best_plant = p
+					if preferred_species != "" and p.species == preferred_species and weighted_dist_sq < min_pref_dist_sq:
+						min_pref_dist_sq = weighted_dist_sq
+						best_pref_plant = p
 
+	if best_pref_plant != null:
+		return best_pref_plant
 	return best_plant
 
 ## Consumes biomass from a plant. Returns actual amount consumed.
@@ -212,7 +236,26 @@ func step_simulation(delta: float, env_grid: EnvironmentalGrid) -> void:
 			elif temp < 0.0:
 				temp_mult = 0.0 # Dormant in freeze
 
-			var growth: float = p.base_growth_rate * moisture_mult * sun_mult * temp_mult * fertility * delta
+			var season_growth_mult: float = 1.0
+			match active_season:
+				0: # SPRING: flowering & fresh shoots
+					season_growth_mult = 1.25
+					p.nutritional_value = 1.30 if p.species == "shrub_bush" else 1.15
+				1: # SUMMER: peak canopy
+					season_growth_mult = 1.05
+					p.nutritional_value = 1.10
+				2: # AUTUMN: high caloric seed/berry yield
+					season_growth_mult = 0.75
+					p.nutritional_value = 1.25
+				3: # WINTER: dormant rime
+					season_growth_mult = 0.35
+					p.nutritional_value = 0.70
+
+			var ash_active: bool = env.get("charred_ash_active", false)
+			var ash_mult: float = 1.35 if ash_active else 1.0
+			p.nutritional_value *= ash_mult
+
+			var growth: float = p.base_growth_rate * moisture_mult * sun_mult * temp_mult * fertility * season_growth_mult * (1.5 if ash_active else 1.0) * delta
 			p.biomass = minf(p.max_biomass, p.biomass + growth)
 			p.health = minf(100.0, p.health + 2.5 * fertility * delta)
 
@@ -352,6 +395,23 @@ func clear() -> void:
 	_plants.clear()
 	_spatial_grid.clear()
 	_next_id = 2000
+
+## Burns and clears dry vegetation in a localized burn radius,
+## resetting plants to sprout phase and priming the terrain for tender regrowth.
+func apply_fire_burn(center_pos: Vector3, radius: float = 3.5) -> int:
+	var cleared_count: int = 0
+	var rad_sq: float = radius * radius
+	for id: int in _plants.keys():
+		var p: PlantData = _plants[id]
+		if p.position.distance_squared_to(center_pos) <= rad_sq:
+			p.biomass = 0.2
+			p.stage = GrowthStage.SPROUT
+			p.health = 50.0
+			cleared_count += 1
+			if _entity_registry:
+				_entity_registry.update_property(id, "biomass", p.biomass)
+				_entity_registry.update_property(id, "stage", p.stage)
+	return cleared_count
 
 
 

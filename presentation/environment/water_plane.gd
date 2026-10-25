@@ -10,6 +10,12 @@ extends MeshInstance3D
 func _ready() -> void:
 	_create_water_surface()
 
+func set_water_size(new_size: float, new_subdivisions: int = -1) -> void:
+	water_size = new_size
+	if new_subdivisions > 0:
+		subdivisions = new_subdivisions
+	_create_water_surface()
+
 func _create_water_surface() -> void:
 	var plane_mesh: PlaneMesh = PlaneMesh.new()
 	plane_mesh.size = Vector2(water_size, water_size)
@@ -18,8 +24,9 @@ func _create_water_surface() -> void:
 	
 	mesh = plane_mesh
 	
-	var mat: ShaderMaterial = ShaderMaterial.new()
-	mat.shader = water_shader
-	material_override = mat
+	if not material_override:
+		var mat: ShaderMaterial = ShaderMaterial.new()
+		mat.shader = water_shader
+		material_override = mat
 	
 	position = Vector3(0.0, 0.0, 0.0) # Waterline at Y = 0

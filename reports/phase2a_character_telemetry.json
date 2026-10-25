@@ -1,0 +1,31 @@
+{
+	"camera_system": {
+		"default_boot_mode": "Third-Person Character",
+		"first_person_supported": true,
+		"teleport_drift_detected": false,
+		"third_person_supported": true,
+		"toggle_key": "V",
+		"total_perspective_switches_tested": 5
+	},
+	"character_asset": {
+		"creator": "Kay Lousberg",
+		"license": "Creative Commons Zero (CC0) 1.0 Universal",
+		"model": "KayKit Adventurers: Rogue (res://presentation/assets/models/human_character.glb)",
+		"proportions": "1.75m human height (scale 0.80), rigged skeleton (41 bones), in-place locomotion",
+		"weapons_hidden": true
+	},
+	"performance": {
+		"avg_draw_calls": 265.682352941176,
+		"avg_fps": 18.5577525993953,
+		"avg_frametime_ms": 53.8858352941176,
+		"avg_memory_mb": 113.55429576425,
+		"avg_primitives": 755250.576470588,
+		"max_frametime_ms": 644.109,
+		"min_frametime_ms": 16.23,
+		"p95_frametime_ms": 78.096,
+		"total_frames_profiled": 85
+	},
+	"phase": "Phase 2A — Human Character & FP/TP Camera",
+	"platform": "Intel Iris Xe Graphics, Windows 11, Godot 4.6.3 Forward+ Vulkan",
+	"resolution": "1280x720 (Balanced Preset)"
+}

@@ -25,6 +25,11 @@ static var _plant_shrub_leaf_mat: ShaderMaterial = null
 static var _plant_grass_mesh: Mesh = null
 static var _plant_grass_mat: Material = null
 
+# Shared material caches to eliminate duplicate materials and batch draw calls across animals
+static var _shared_stag_materials: Dictionary = {}
+static var _shared_deer_materials: Dictionary = {}
+static var _shared_wolf_materials: Dictionary = {}
+
 # Fallback primitive resources
 var _mesh_herb_body: BoxMesh
 var _mat_herb_body: StandardMaterial3D
@@ -276,8 +281,17 @@ func _update_herbivores(delta: float) -> void:
 		var dist_to_cam: float = node.position.distance_to(cam_pos)
 		var is_distant: bool = dist_to_cam > 55.0
 
+		var is_low_preset: bool = (GraphicsPresets.current_preset == GraphicsPresets.Preset.LOW)
+		var max_shadow_dist: float = 0.0 if is_low_preset else (24.0 if GraphicsPresets.current_preset == GraphicsPresets.Preset.BALANCED else 45.0)
+		var want_shadow: bool = (dist_to_cam < max_shadow_dist) and not is_low_preset
+		if node.get_meta("shadow_active", true) != want_shadow:
+			node.set_meta("shadow_active", want_shadow)
+			var setting = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if want_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for child_mesh in node.find_children("", "MeshInstance3D", true, false):
+				child_mesh.cast_shadow = setting
+
 		# Authentic animation state machine with exact stride-matched speed scaling
-		if anim:
+		if anim and (not is_distant or is_moving):
 			match h.state:
 				FaunaSimulation.HerbivoreState.DRINKING:
 					anim.speed_scale = 1.0
@@ -335,17 +349,26 @@ func _update_herbivores(delta: float) -> void:
 				else:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, clampf(delta * 8.0, 0.0, 1.0))
 
-		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
-
-		# Smooth natural rotation toward travel direction (GLTF forward is -Z) with rate-limited turning
+		# Continuous frame-by-frame dead-reckoning extrapolation between 0.5s ticks
 		if is_moving:
-			var target_rot_y: float = atan2(-h.velocity.x, -h.velocity.z) if anim != null else atan2(h.velocity.x, h.velocity.z)
+			node.position += h.velocity * delta
+			if _coordinator and _coordinator.terrain_height_func.is_valid():
+				var cur_ground: float = _coordinator.terrain_height_func.call(node.position.x, node.position.z)
+				if is_finite(cur_ground):
+					target_pos.y = cur_ground
+			node.position = node.position.lerp(target_pos, clampf(delta * 4.0, 0.0, 1.0))
+		else:
+			node.position = node.position.lerp(target_pos, clampf(delta * 10.0, 0.0, 1.0))
+
+		# Smooth natural rotation toward travel direction (Godot forward is -Z) with rate-limited turning
+		if is_moving:
+			var target_rot_y: float = atan2(-h.velocity.x, -h.velocity.z)
 			var max_angular_speed: float = 6.2 if h.state == FaunaSimulation.HerbivoreState.FLEEING else 4.2
 			var diff: float = angle_difference(node.rotation.y, target_rot_y)
 			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * max_angular_speed, delta * max_angular_speed), -PI, PI)
 		elif h.state == FaunaSimulation.HerbivoreState.ALERT:
-			# When alert, orient body towards vigilance heading
-			var target_rot_y: float = atan2(-cos(h.heading), -sin(h.heading)) if anim != null else h.heading
+			# When alert, orient body towards vigilance heading (matching -Z forward convention)
+			var target_rot_y: float = atan2(-cos(h.heading), -sin(h.heading))
 			var diff: float = angle_difference(node.rotation.y, target_rot_y)
 			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * 3.6, delta * 3.6), -PI, PI)
 
@@ -407,8 +430,17 @@ func _update_predators(delta: float) -> void:
 		var dist_to_cam: float = node.position.distance_to(cam_pos)
 		var is_distant: bool = dist_to_cam > 55.0
 
+		var is_low_preset: bool = (GraphicsPresets.current_preset == GraphicsPresets.Preset.LOW)
+		var max_shadow_dist: float = 0.0 if is_low_preset else (24.0 if GraphicsPresets.current_preset == GraphicsPresets.Preset.BALANCED else 45.0)
+		var want_shadow: bool = (dist_to_cam < max_shadow_dist) and not is_low_preset
+		if node.get_meta("shadow_active", true) != want_shadow:
+			node.set_meta("shadow_active", want_shadow)
+			var setting = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if want_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for child_mesh in node.find_children("", "MeshInstance3D", true, false):
+				child_mesh.cast_shadow = setting
+
 		# Authentic predator animation state machine with stride-matched speed scaling
-		if anim:
+		if anim and (not is_distant or is_moving):
 			match p.state:
 				FaunaSimulation.PredatorState.DRINKING:
 					anim.speed_scale = 1.0
@@ -423,9 +455,13 @@ func _update_predators(delta: float) -> void:
 					anim.speed_scale = 1.0
 					_play_anim(anim, "Eating", 0.20)
 				FaunaSimulation.PredatorState.HUNTING:
-					# Stride matching for predator Gallop: ~4.00 m/s base stride
-					anim.speed_scale = clampf(current_speed / 4.00, 0.75, 1.65)
-					_play_anim(anim, "Gallop", 0.15)
+					if p.is_stalking:
+						anim.speed_scale = clampf(current_speed / 2.20, 0.65, 1.30)
+						_play_anim(anim, "Walk", 0.20)
+					else:
+						# Stride matching for predator Gallop: ~4.00 m/s base stride
+						anim.speed_scale = clampf(current_speed / 4.00, 0.75, 1.65)
+						_play_anim(anim, "Gallop", 0.15)
 				FaunaSimulation.PredatorState.STARVING:
 					if is_moving:
 						anim.speed_scale = clampf(current_speed / 1.65, 0.55, 1.20)
@@ -462,18 +498,24 @@ func _update_predators(delta: float) -> void:
 			if head_node:
 				if p.state == FaunaSimulation.PredatorState.EATING or p.state == FaunaSimulation.PredatorState.DRINKING:
 					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-60.0), clampf(delta * 10.0, 0.0, 1.0))
-				else:
-					head_node.rotation.x = lerp_angle(head_node.rotation.x, deg_to_rad(-90.0), clampf(delta * 8.0, 0.0, 1.0))
-
-		node.position = node.position.lerp(target_pos, clampf(delta * 12.0, 0.0, 1.0))
+		# Continuous frame-by-frame dead-reckoning extrapolation between 0.5s ticks
+		if is_moving:
+			node.position += p.velocity * delta
+			if _coordinator and _coordinator.terrain_height_func.is_valid():
+				var cur_ground: float = _coordinator.terrain_height_func.call(node.position.x, node.position.z)
+				if is_finite(cur_ground):
+					target_pos.y = cur_ground
+			node.position = node.position.lerp(target_pos, clampf(delta * 4.0, 0.0, 1.0))
+		else:
+			node.position = node.position.lerp(target_pos, clampf(delta * 10.0, 0.0, 1.0))
 
 		if is_moving:
-			var target_rot_y: float = atan2(-p.velocity.x, -p.velocity.z) if anim != null else atan2(p.velocity.x, p.velocity.z)
+			var target_rot_y: float = atan2(-p.velocity.x, -p.velocity.z)
 			var max_pred_angular_speed: float = 6.8 if p.state == FaunaSimulation.PredatorState.HUNTING else 4.5
 			var diff: float = angle_difference(node.rotation.y, target_rot_y)
 			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * max_pred_angular_speed, delta * max_pred_angular_speed), -PI, PI)
 		elif p.state == FaunaSimulation.PredatorState.ALERT:
-			var target_rot_y: float = atan2(-cos(p.heading), -sin(p.heading)) if anim != null else p.heading
+			var target_rot_y: float = atan2(-cos(p.heading), -sin(p.heading))
 			var diff: float = angle_difference(node.rotation.y, target_rot_y)
 			node.rotation.y = wrapf(node.rotation.y + clampf(diff, -delta * 3.8, delta * 3.8), -PI, PI)
 
@@ -547,20 +589,36 @@ func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) 
 		# Apply natural fur material, soft specular fur sheen, and phenotype coat tint
 		var meshes: Array = []
 		_find_mesh_instances(model_inst, meshes)
-		for mesh_node in meshes:
+		var is_stag: bool = (entity_id % 2 == 0)
+		for mesh_idx in range(meshes.size()):
+			var mesh_node = meshes[mesh_idx]
 			if mesh_node is MeshInstance3D and mesh_node.mesh:
 				mesh_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 				for s in range(mesh_node.mesh.get_surface_count()):
 					var m = mesh_node.mesh.surface_get_material(s)
 					if m is StandardMaterial3D:
-						var custom_mat: StandardMaterial3D = m.duplicate()
-						custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
-						custom_mat.roughness = 0.82
-						custom_mat.metallic_specular = 0.22
-						if genome and s == 0 and genome.coat_tint != Color(0.72, 0.55, 0.38):
+						var has_custom_tint: bool = (genome and s == 0 and genome.coat_tint != Color(0.72, 0.55, 0.38))
+						if has_custom_tint:
+							var custom_mat: StandardMaterial3D = m.duplicate()
+							custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+							custom_mat.roughness = 0.82
+							custom_mat.metallic_specular = 0.22
 							custom_mat.albedo_color = genome.coat_tint
-						mesh_node.set_surface_override_material(s, custom_mat)
+							mesh_node.set_surface_override_material(s, custom_mat)
+						else:
+							var key: String = "%d_%d" % [mesh_idx, s]
+							var dict: Dictionary = _shared_stag_materials if is_stag else _shared_deer_materials
+							var shared_mat: StandardMaterial3D = dict.get(key, null)
+							if shared_mat == null:
+								shared_mat = m.duplicate()
+								shared_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+								shared_mat.roughness = 0.82
+								shared_mat.metallic_specular = 0.22
+								dict[key] = shared_mat
+							mesh_node.set_surface_override_material(s, shared_mat)
 
+		# Rotate 180 degrees so GLTF model head (+Z) aligns with Godot standard forward convention (-Z)
+		model_inst.rotation.y = PI
 		root.add_child(model_inst)
 		var base_scale: float = 0.58 if (entity_id % 2 == 0) else 0.52
 		if genome:
@@ -569,7 +627,7 @@ func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) 
 			root.scale = Vector3.ONE * base_scale
 		return root
 
-	# Fallback primitive model
+	# Fallback primitive model (aligned to -Z forward)
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_herb_body
@@ -581,23 +639,23 @@ func _create_herbivore_mesh(genome: EcosystemGenome = null, entity_id: int = 0) 
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_herb_head
 	head_inst.material_override = _mat_herb_head
-	head_inst.position = Vector3(0.0, 0.85, 0.5)
+	head_inst.position = Vector3(0.0, 0.85, -0.5)
 	root.add_child(head_inst)
 
 	var horn_left: MeshInstance3D = MeshInstance3D.new()
 	horn_left.name = "HornLeft"
 	horn_left.mesh = _mesh_herb_horn
 	horn_left.material_override = _mat_herb_horn
-	horn_left.position = Vector3(-0.15, 1.15, 0.45)
-	horn_left.rotation_degrees = Vector3(15, 0, -15)
+	horn_left.position = Vector3(-0.15, 1.15, -0.45)
+	horn_left.rotation_degrees = Vector3(-15, 0, -15)
 	root.add_child(horn_left)
 
 	var horn_right: MeshInstance3D = MeshInstance3D.new()
 	horn_right.name = "HornRight"
 	horn_right.mesh = _mesh_herb_horn
 	horn_right.material_override = _mat_herb_horn
-	horn_right.position = Vector3(0.15, 1.15, 0.45)
-	horn_right.rotation_degrees = Vector3(15, 0, 15)
+	horn_right.position = Vector3(0.15, 1.15, -0.45)
+	horn_right.rotation_degrees = Vector3(-15, 0, 15)
 	root.add_child(horn_right)
 
 	if genome:
@@ -623,20 +681,34 @@ func _create_predator_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -
 
 		var meshes: Array = []
 		_find_mesh_instances(model_inst, meshes)
-		for mesh_node in meshes:
+		for mesh_idx in range(meshes.size()):
+			var mesh_node = meshes[mesh_idx]
 			if mesh_node is MeshInstance3D and mesh_node.mesh:
 				mesh_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 				for s in range(mesh_node.mesh.get_surface_count()):
 					var m = mesh_node.mesh.surface_get_material(s)
 					if m is StandardMaterial3D:
-						var custom_mat: StandardMaterial3D = m.duplicate()
-						custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
-						custom_mat.roughness = 0.80
-						custom_mat.metallic_specular = 0.22
-						if genome and s == 0 and genome.coat_tint != Color(0.15, 0.15, 0.16):
+						var has_custom_tint: bool = (genome and s == 0 and genome.coat_tint != Color(0.15, 0.15, 0.16))
+						if has_custom_tint:
+							var custom_mat: StandardMaterial3D = m.duplicate()
+							custom_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+							custom_mat.roughness = 0.80
+							custom_mat.metallic_specular = 0.22
 							custom_mat.albedo_color = genome.coat_tint
-						mesh_node.set_surface_override_material(s, custom_mat)
+							mesh_node.set_surface_override_material(s, custom_mat)
+						else:
+							var key: String = "%d_%d" % [mesh_idx, s]
+							var shared_mat: StandardMaterial3D = _shared_wolf_materials.get(key, null)
+							if shared_mat == null:
+								shared_mat = m.duplicate()
+								shared_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+								shared_mat.roughness = 0.80
+								shared_mat.metallic_specular = 0.22
+								_shared_wolf_materials[key] = shared_mat
+							mesh_node.set_surface_override_material(s, shared_mat)
 
+		# Rotate 180 degrees so GLTF wolf head (+Z) aligns with Godot standard forward convention (-Z)
+		model_inst.rotation.y = PI
 		root.add_child(model_inst)
 		var base_scale: float = 0.46
 		if genome:
@@ -645,7 +717,7 @@ func _create_predator_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -
 			root.scale = Vector3.ONE * base_scale
 		return root
 
-	# Fallback primitive model
+	# Fallback primitive model (aligned to -Z forward)
 	var body_inst: MeshInstance3D = MeshInstance3D.new()
 	body_inst.name = "Body"
 	body_inst.mesh = _mesh_pred_body
@@ -657,20 +729,20 @@ func _create_predator_mesh(genome: EcosystemGenome = null, entity_id: int = 0) -
 	head_inst.name = "Head"
 	head_inst.mesh = _mesh_pred_head
 	head_inst.material_override = _mat_pred_head
-	head_inst.position = Vector3(0.0, 0.6, 0.7)
-	head_inst.rotation_degrees = Vector3(-90, 0, 0)
+	head_inst.position = Vector3(0.0, 0.6, -0.7)
+	head_inst.rotation_degrees = Vector3(90, 0, 0)
 	root.add_child(head_inst)
 
 	var eye_l: MeshInstance3D = MeshInstance3D.new()
 	eye_l.mesh = _mesh_pred_eye
 	eye_l.material_override = _mat_pred_eye
-	eye_l.position = Vector3(-0.12, 0.62, 0.82)
+	eye_l.position = Vector3(-0.12, 0.62, -0.82)
 	root.add_child(eye_l)
 
 	var eye_r: MeshInstance3D = MeshInstance3D.new()
 	eye_r.mesh = _mesh_pred_eye
 	eye_r.material_override = _mat_pred_eye
-	eye_r.position = Vector3(0.12, 0.62, 0.82)
+	eye_r.position = Vector3(0.12, 0.62, -0.82)
 	root.add_child(eye_r)
 
 	if genome:

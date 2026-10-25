@@ -26,6 +26,7 @@ var target_wind_speed: float = 1.5
 var gust_intensity: float = 0.25
 var wind_gust: float = 0.0
 var sim_time_accum: float = 0.0
+var manual_override: bool = false
 
 var _rng: RandomNumberGenerator
 var _event_bus: WorldEventBus
@@ -37,7 +38,8 @@ func _init(seed_stream: RandomNumberGenerator = null, event_bus: WorldEventBus =
 	_apply_weather_wind_targets(current_state, true)
 
 func update(delta_sim_seconds: float) -> void:
-	duration_remaining -= delta_sim_seconds
+	if not manual_override:
+		duration_remaining -= delta_sim_seconds
 	sim_time_accum += delta_sim_seconds
 
 	# Smoothly steer wind speed and direction towards target states
@@ -53,15 +55,27 @@ func update(delta_sim_seconds: float) -> void:
 
 	wind_updated.emit(wind_direction, wind_speed, wind_gust)
 
-	if duration_remaining <= 0.0:
+	if not manual_override and duration_remaining <= 0.0:
 		_transition_to_next_state()
 
+func set_manual_state(new_state: WeatherState) -> void:
+	manual_override = true
+	set_state(new_state, 999999.0)
+
+func set_weather_override(new_state: WeatherState) -> void:
+	set_manual_state(new_state)
+
+func clear_manual_override() -> void:
+	manual_override = false
+	duration_remaining = _rng.randf_range(min_duration, max_duration)
+	_apply_weather_wind_targets(current_state, false)
+
 func set_state(new_state: WeatherState, duration: float = 60.0) -> void:
+	var old_state: WeatherState = current_state
 	if new_state == current_state:
 		duration_remaining = duration
 		return
 
-	var old_state: WeatherState = current_state
 	current_state = new_state
 	duration_remaining = duration
 	_apply_weather_wind_targets(new_state, false)
@@ -73,7 +87,8 @@ func set_state(new_state: WeatherState, duration: float = 60.0) -> void:
 			"new_weather": get_state_name(new_state),
 			"duration": duration_remaining,
 			"wind_speed": wind_speed,
-			"wind_direction": [wind_direction.x, wind_direction.y]
+			"wind_direction": [wind_direction.x, wind_direction.y],
+			"manual_override": manual_override
 		})
 
 func _apply_weather_wind_targets(state: WeatherState, immediate: bool = false) -> void:

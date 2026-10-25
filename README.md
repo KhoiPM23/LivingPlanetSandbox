@@ -34,9 +34,10 @@ The core design philosophy is **authentic ecological causality**: changes in the
 ## 🔬 Core Simulation Systems
 
 ### 1. Procedural World Generation & Biomes
-- **Deterministic Island Geography:** Bounded 160m island generated using multi-frequency simplex noise with dedicated PRNG stream isolation. Identical seeds reproduce exact terrain, water boundaries, and flora placement.
-- **Slope & Elevation Shading:** Procedural vertex-colored terrain blends steep cliffs ($>0.38$ slope) into weathered granite, shoreline elevations ($<1.1\text{m}$) into warm sand, and mountain peaks ($>12.0\text{m}$) into alpine snow.
-- **Whittaker Biome Classification:** Discrete 32x32 macro grid (1024 cells) classifies 7 biomes: `OCEAN`, `COASTAL_BEACH`, `WETLAND`, `TEMPERATE_MEADOW`, `BOREAL_FOREST`, `ALPINE_SUMMIT`, `ARID_SHRUBLAND` with explainable rationale.
+- **Deterministic Island Geography:** Bounded 720m procedural island generated using multi-frequency simplex noise with dedicated PRNG stream isolation. Identical seeds reproduce exact terrain, water boundaries, and flora placement.
+- **Slope & Elevation Shading:** Procedural vertex-colored terrain blends steep cliffs ($>0.38$ slope) into weathered granite, shoreline elevations ($<1.1\text{m}$) into warm sand, and mountain peaks ($>18.0\text{m}$) into alpine snow.
+- **Whittaker Biome Classification:** Classifies 7 distinct biomes: `OCEAN`, `COASTAL_BEACH`, `WETLAND`, `TEMPERATE_MEADOW`, `BOREAL_FOREST`, `ALPINE_SUMMIT`, `ARID_SHRUBLAND` with explainable rationale.
+- **Environmental Storytelling Landmarks:** 8 narrative POIs across the island (Naturalist Camp, Emerald Cove Canoe, Whispering Cairn, Skyspire Summit, Highland Ring, Cape Solitude) with contextual live compass navigation (`🧭 SE 135° • 🛶 Emerald Cove [65m]`).
 
 ### 2. Microclimate & Dynamic Weather
 - **Markov Chain Weather:** 4 discrete weather states (`CLEAR`, `CLOUDY`, `RAIN`, `DROUGHT`) governing solar attenuation, temperature offsets, and precipitation.
@@ -69,8 +70,11 @@ The core design philosophy is **authentic ecological causality**: changes in the
   - `[;] Deluge Pulse`: Trigger finite high-pressure moisture pulse (+0.06/s) with defined radius and duration countdown.
 - **Scientific Experiment History (`ExperimentHistory`):** Automatically logs session seed, initial baseline, player interventions, and computes delayed before/after ecological outcome deltas in the HUD Experiments Tab.
 - **CausalTracker & Explanations:** Spatial-temporal correlation tracks player interventions and links them to downstream cascades (withering, blooms, starvation) surfaced in HUD event logs and cell inspector.
-- **Dual-Mode Camera Exploration (`[V]`):** Seamless toggle between Flycam free flight and First-Person Walker (`CharacterBody3D` with physical collision, 1.65m eye height, slopes up to 48°, and mouse capture). Also includes Orbit Inspect, Follow Entity, Top-Down, 5 scenic bookmarks (`[B]`), and dynamic compass heading (`🧭 NW 315°`).
-- **Graphics Presets (`GraphicsPresets`):** Scalable profiles (`Low`, `Balanced/Iris Xe`, `Cinematic`) accessible via the in-engine settings modal.
+- **Tri-Mode Exploration Camera (`[V]`):** Seamless toggle between:
+  1. *Third-Person Character:* Direct third-person character control with full locomotion animation, sprint, and camera distance scroll.
+  2. *First-Person Walker:* Immersive 1.65m eye level exploration with physical footing, crouching/stealth, and jump.
+  3. *Flycam:* Free flight drone camera with flight speed scaling, 5 scenic bookmarks (`[B]`), and entity orbit tracking (`[F]`).
+- **Graphics Presets (`GraphicsPresets`):** Scalable profiles (`Low`, `Balanced/Iris Xe`, `Cinematic`) featuring AMD FSR upscaling with RCAS sharpening and MultiMesh distance culling.
 
 ### 5. Atomic Schema v3 Persistence & Migration
 - **Crash-Safe Serialization:** Writes save states to `<path>.tmp`, rotates previous save to `<path>.bak`, and promotes via atomic rename.
@@ -83,25 +87,29 @@ The core design philosophy is **authentic ecological causality**: changes in the
 
 | Action | Primary Input | Secondary / Alternative |
 | :--- | :--- | :--- |
-| **Move (Flycam / Walker)** | `W / A / S / D` | Arrow Keys |
-| **Walker Jump / Flycam Up** | `Space` | `E` (Flycam) |
-| **Walker Sprint / Boost** | `Shift` (Hold) | — |
-| **Flycam Altitude Down** | `C` | `Q` |
-| **Adjust Flight Speed** | `Mouse Wheel Up / Down` | Flight Slider in Settings |
-| **Look / Rotate View** | `Mouse Move` (Walker) / `RMB Drag` (Flycam) | Middle Mouse Button |
-| **Toggle Flycam / First-Person** | `V` | HUD Mode Button |
-| **Select Tools [1 - 7, 8, 9, 0, -, =, ;]** | Number Keys `1` to `0`, `-`, `=`, `;` | Click Tool Palette in HUD |
-| **Apply Tool** | `Left Mouse Button` | Crosshair Center (Walker) |
-| **Adjust Brush Radius** | `[` (Decrease) / `]` (Increase) | — |
-| **Cycle Scenic Bookmarks** | `B` | — |
+| **Move (Character / Flycam)** | `W / A / S / D` | Arrow Keys |
+| **Jump (Character) / Up (Flycam)** | `Space` | `E` (Flycam) |
+| **Sprint / Boost** | `Shift` (Hold) | — |
+| **Crouch & Stealth (Character)** | `C` / `Ctrl` (Hold) | Reduces animal alarm radius |
+| **Altitude Down (Flycam)** | `C` | `Q` |
+| **Cycle Camera Perspective** | `V` | 3rd-Person → 1st-Person → Flycam |
+| **Look / Rotate View** | `Direct Mouse Look` (Auto-captured) | `RMB Drag` (Flycam) |
+| **Adjust Zoom / Flight Speed** | `Mouse Wheel Up / Down` | Flight Slider in Settings |
+| **Cycle Scenic Bookmarks** | `B` | POI Button in HUD |
 | **Track Inspected Entity** | `F` | Inspector Card Button |
-| **Cycle Weather State** | `Y` / `T` | Top Toolbar Weather Button |
+| **Advance Simulation Time (+2h)**| `T` | Step Clock Button in HUD |
+| **Cycle Weather State** | `Y` | Clear → Overcast → Rain → Drought → Auto |
+| **Cycle Graphics Quality Preset**| `G` | Low → Balanced (Iris Xe) → Cinematic |
 | **Toggle Menu & Settings** | `Escape` | `Menu [Esc]` Button in HUD |
 | **Toggle Help & Guide** | `F1` | `Help [F1]` Button in HUD |
 | **QuickSave Experiment** | `F5` | Simulation Menu Tab |
 | **QuickLoad Experiment** | `F9` | Simulation Menu Tab |
-| **Pause / Resume** | `P` / Top Toolbar Button | `Space` (Flycam only) |
-| **Toggle HUD Visibility** | `H` | Top Toolbar Button |
+| **Pause / Resume** | `P` | Pause Button in HUD |
+| **Toggle Side Toolbars** | `Tab` | Inspect / Tools / Telemetry |
+| **Toggle HUD Visibility** | `H` | Clean Cinematic View |
+| **Select Tools [1 - 7, 8, 9, 0, -, =, ;]** | Number Keys `1` to `0`, `-`, `=`, `;` | Click Tool Palette in HUD |
+| **Apply Tool** | `Left Mouse Button` | Crosshair Center |
+| **Adjust Brush Radius** | `[` (Decrease) / `]` (Increase) | — |
 
 ---
 
